@@ -19,8 +19,8 @@ export async function POST(req: Request) {
       const { ROLE_PERMISSIONS } = await import("@/lib/auth/permissions");
       permissions = ROLE_PERMISSIONS[payload.role]?.perms || [];
     }
-    if (!payload || !permissions.includes("production.execute")) {
-      return NextResponse.json({ success: false, error: "Forbidden: Requires production.execute permission" }, { status: 403 });
+    if (!payload || (!permissions.includes("production.execute") && !permissions.includes("machines.operate"))) {
+      return NextResponse.json({ success: false, error: "Forbidden: Requires production.execute or machines.operate permission" }, { status: 403 });
     }
 
     const body = await req.json();
