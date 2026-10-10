@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase/client";
+import { pool } from "@/lib/db";
 
 export async function POST(req: Request) {
   try {
@@ -8,40 +8,55 @@ export async function POST(req: Request) {
     const amount = parseFloat(delta);
     if (isNaN(amount) || amount === 0) throw new Error("Invalid delta");
 
-    // Fetch the item
-    const { data: itemData, error: fetchErr } = await supabase.from("yarn_items").select("*").eq("code", itemCode).single();
-    if (fetchErr || !itemData) throw new Error("Yarn item not found");
+    const client = await pool.connect();
 
-    const currentOnHand = parseFloat(itemData.on_hand || 0);
-    const currentAvailable = parseFloat(itemData.available || 0);
+    try {
+      await client.query("BEGIN");
 
-    const newOnHand = currentOnHand + amount;
-    const newAvailable = currentAvailable + amount;
+      // Fetch the item
+      const itemRes = await client.query("SELECT * FROM yarn_items WHERE code = $1 FOR UPDATE", [itemCode]);
+      const itemData = itemRes.rows[0];
+      if (!itemData) throw new Error("Yarn item not found");
 
-    if (newAvailable < 0) throw new Error("Cannot adjust below reserved stock");
+      const currentOnHand = parseFloat(itemData.on_hand || 0);
+      const currentAvailable = parseFloat(itemData.available || 0);
 
-    // Update item
-    const { error: updateErr } = await supabase.from("yarn_items").update({
-      on_hand: newOnHand,
-      available: newAvailable
-    }).eq("code", itemCode);
-    
-    if (updateErr) throw updateErr;
+      const newOnHand = currentOnHand + amount;
+      const newAvailable = currentAvailable + amount;
 
-    // Create a movement record
-    await supabase.from("yarn_movements").insert({
-      id: crypto.randomUUID(),
-      code: `MOV-${Math.floor(Date.now() / 1000)}-${Math.floor(Math.random() * 1000)}`,
-      kind: "ADJUSTMENT",
-      item_code: itemCode,
-      quantity: amount.toFixed(3),
-      unit: itemData.unit,
-      reference: reason,
-      actor: actor || "System",
-      recorded_at: new Date().toISOString()
-    });
+      if (newAvailable < 0) throw new Error("Cannot adjust below reserved stock");
 
-    return NextResponse.json({ success: true });
+      // Update item
+      await client.query(
+        "UPDATE yarn_items SET on_hand = $1, available = $2 WHERE code = $3",
+        [newOnHand, newAvailable, itemCode]
+      );
+
+      // Create a movement record
+      await client.query(`
+        INSERT INTO yarn_movements (
+          id, code, kind, item_code, quantity, unit, reference, actor, recorded_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `, [
+        crypto.randomUUID(),
+        `MOV-${Math.floor(Date.now() / 1000)}-${Math.floor(Math.random() * 1000)}`,
+        "ADJUSTMENT",
+        itemCode,
+        amount.toFixed(3),
+        itemData.unit,
+        reason,
+        actor || "System",
+        new Date().toISOString()
+      ]);
+
+      await client.query("COMMIT");
+      return NextResponse.json({ success: true });
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 400 });
   }

@@ -1,57 +1,56 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase/client";
+import { pool } from "@/lib/db";
 
 export async function POST(request: Request) {
-  const body = await request.json();
-  const { billId, amountPaid, paymentMethod, referenceNo } = body;
+  try {
+    const body = await request.json();
+    const { billId, amountPaid, paymentMethod, referenceNo } = body;
 
-  if (!billId || !amountPaid || !paymentMethod) {
-    return NextResponse.json({ error: { code: "MISSING_FIELDS", message: "Required fields missing" } }, { status: 400 });
-  }
-
-  // Insert payment
-  const { data: paymentData, error: paymentError } = await supabase
-    .from("supplier_payments")
-    .insert([{
-      bill_id: billId,
-      amount_paid: amountPaid,
-      payment_method: paymentMethod,
-      reference_no: referenceNo || null
-    }])
-    .select()
-    .single();
-
-  if (paymentError) {
-    return NextResponse.json({ error: { code: paymentError.code, message: paymentError.message } }, { status: 500 });
-  }
-
-  // Recalculate bill status
-  const { data: allPayments } = await supabase
-    .from("supplier_payments")
-    .select("amount_paid")
-    .eq("bill_id", billId);
-
-  const totalPaid = allPayments?.reduce((sum, p) => sum + Number(p.amount_paid), 0) || 0;
-
-  const { data: bill } = await supabase
-    .from("supplier_bills")
-    .select("amount_due")
-    .eq("id", billId)
-    .single();
-
-  if (bill) {
-    let newStatus = "PENDING";
-    if (totalPaid >= bill.amount_due) {
-      newStatus = "PAID";
-    } else if (totalPaid > 0) {
-      newStatus = "PARTIAL";
+    if (!billId || !amountPaid || !paymentMethod) {
+      return NextResponse.json({ error: { code: "MISSING_FIELDS", message: "Required fields missing" } }, { status: 400 });
     }
 
-    await supabase
-      .from("supplier_bills")
-      .update({ status: newStatus })
-      .eq("id", billId);
-  }
+    const client = await pool.connect();
 
-  return NextResponse.json({ data: paymentData });
+    try {
+      await client.query("BEGIN");
+
+      // Insert payment
+      const paymentRes = await client.query(`
+        INSERT INTO supplier_payments (bill_id, amount_paid, payment_method, reference_no)
+        VALUES ($1, $2, $3, $4)
+        RETURNING *
+      `, [billId, amountPaid, paymentMethod, referenceNo || null]);
+
+      // Recalculate bill status
+      const sumRes = await client.query(
+        "SELECT COALESCE(SUM(amount_paid), 0) as total_paid FROM supplier_payments WHERE bill_id = $1",
+        [billId]
+      );
+      const totalPaid = Number(sumRes.rows[0].total_paid);
+
+      const billRes = await client.query("SELECT amount_due FROM supplier_bills WHERE id = $1", [billId]);
+      if (billRes.rows.length > 0) {
+        const amountDue = Number(billRes.rows[0].amount_due);
+        let newStatus = "PENDING";
+        if (totalPaid >= amountDue) {
+          newStatus = "PAID";
+        } else if (totalPaid > 0) {
+          newStatus = "PARTIAL";
+        }
+
+        await client.query("UPDATE supplier_bills SET status = $1 WHERE id = $2", [newStatus, billId]);
+      }
+
+      await client.query("COMMIT");
+      return NextResponse.json({ data: paymentRes.rows[0] });
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (error: any) {
+    return NextResponse.json({ error: { code: "DB_ERROR", message: error.message } }, { status: 500 });
+  }
 }

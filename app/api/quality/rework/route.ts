@@ -1,42 +1,54 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase/client";
+import { pool } from "@/lib/db";
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
     const { rollId, action, reason, actor } = body;
 
-    const { data: roll, error: rollErr } = await supabase
-      .from("fabric_rolls")
-      .select("*")
-      .eq("id", rollId)
-      .single();
+    const client = await pool.connect();
 
-    if (rollErr || !roll) throw new Error("Roll not found");
+    try {
+      await client.query("BEGIN");
 
-    let newStatus = roll.status;
-    if (action === "start-rework") newStatus = "IN_REWORK";
-    if (action === "complete-rework") newStatus = "REINSPECTION_REQUIRED";
+      const rollRes = await client.query("SELECT * FROM fabric_rolls WHERE id = $1 FOR UPDATE", [rollId]);
+      const roll = rollRes.rows[0];
 
-    // Update Roll status
-    const { error: updateErr } = await supabase
-      .from("fabric_rolls")
-      .update({ status: newStatus })
-      .eq("id", rollId);
+      if (!roll) throw new Error("Roll not found");
 
-    if (updateErr) throw updateErr;
+      let newStatus = roll.status;
+      if (action === "start-rework") newStatus = "IN_REWORK";
+      if (action === "complete-rework") newStatus = "REINSPECTION_REQUIRED";
 
-    // Insert rework event
-    await supabase.from("rework_events").insert({
-      id: crypto.randomUUID(),
-      roll_id: rollId,
-      action: action,
-      reason: reason,
-      actor: actor || "System",
-      recorded_at: new Date().toISOString()
-    });
+      // Update Roll status
+      await client.query(
+        "UPDATE fabric_rolls SET status = $1 WHERE id = $2",
+        [newStatus, rollId]
+      );
 
-    return NextResponse.json({ success: true, status: newStatus });
+      // Insert rework event
+      await client.query(`
+        INSERT INTO rework_events (
+          id, roll_id, roll_code, action, reason, actor, recorded_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `, [
+        crypto.randomUUID(),
+        rollId,
+        roll.code,
+        action,
+        reason,
+        actor || "System",
+        new Date().toISOString()
+      ]);
+
+      await client.query("COMMIT");
+      return NextResponse.json({ success: true, status: newStatus });
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 400 });
   }

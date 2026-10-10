@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase/client";
+import { pool } from "@/lib/db";
 import type { DemoData, Order, YarnItem, YarnBatch, Machine, FabricRoll, Shipment, Operation, YarnMovement, OutputEvent, InspectionEvent, ReworkEvent, DispatchEvent, MachineEvent } from "@/lib/domain/types";
 
 export function snakeToCamel(obj: any): any {
@@ -22,58 +22,75 @@ export async function fetchSupabaseData(): Promise<Partial<DemoData>> {
       ordersRes, machinesRes, rollsRes, shipmentsRes, opsRes, yarnItemsRes, yarnBatchesRes,
       yarnMovementsRes, outputEventsRes, qualityInspectionsRes, reworkEventsRes, dispatchEventsRes, machineEventsRes
     ] = await Promise.all([
-      supabase.from("orders").select("*"),
-      supabase.from("machines").select("*"),
-      supabase.from("fabric_rolls").select("*"),
-      supabase.from("shipments").select("*"),
-      supabase.from("operations").select("*"),
-      supabase.from("yarn_items").select("*"),
-      supabase.from("yarn_batches").select("*"),
-      supabase.from("yarn_movements").select("*"),
-      supabase.from("output_events").select("*"),
-      supabase.from("quality_inspections").select("*"),
-      supabase.from("rework_events").select("*"),
-      supabase.from("dispatch_events").select("*"),
-      supabase.from("machine_events").select("*"),
+      pool.query("SELECT * FROM orders"),
+      pool.query("SELECT * FROM machines"),
+      pool.query("SELECT * FROM fabric_rolls"),
+      pool.query("SELECT * FROM shipments"),
+      pool.query("SELECT * FROM operations"),
+      pool.query("SELECT * FROM yarn_items"),
+      pool.query("SELECT * FROM yarn_batches"),
+      pool.query("SELECT * FROM yarn_movements"),
+      pool.query("SELECT * FROM output_events"),
+      pool.query("SELECT * FROM quality_inspections"),
+      pool.query("SELECT * FROM rework_events"),
+      pool.query("SELECT * FROM dispatch_events"),
+      pool.query("SELECT * FROM machine_events"),
     ]);
 
     return {
-      orders: snakeToCamel(ordersRes.data || []) as Order[],
-      machines: snakeToCamel(machinesRes.data || []) as Machine[],
-      rolls: snakeToCamel(rollsRes.data || []) as FabricRoll[],
-      shipments: snakeToCamel(shipmentsRes.data || []) as Shipment[],
-      operations: snakeToCamel(opsRes.data || []) as Operation[],
-      yarnItems: snakeToCamel(yarnItemsRes.data || []) as YarnItem[],
-      yarnBatches: snakeToCamel(yarnBatchesRes.data || []) as YarnBatch[],
-      yarnMovements: snakeToCamel(yarnMovementsRes.data || []) as YarnMovement[],
-      outputEvents: snakeToCamel(outputEventsRes.data || []) as OutputEvent[],
-      inspectionEvents: snakeToCamel(qualityInspectionsRes.data || []) as InspectionEvent[],
-      reworkEvents: snakeToCamel(reworkEventsRes.data || []) as ReworkEvent[],
-      dispatchEvents: snakeToCamel(dispatchEventsRes.data || []) as DispatchEvent[],
-      machineEvents: snakeToCamel(machineEventsRes.data || []) as MachineEvent[],
+      orders: snakeToCamel(ordersRes.rows || []) as Order[],
+      machines: snakeToCamel(machinesRes.rows || []) as Machine[],
+      rolls: snakeToCamel(rollsRes.rows || []) as FabricRoll[],
+      shipments: snakeToCamel(shipmentsRes.rows || []) as Shipment[],
+      operations: snakeToCamel(opsRes.rows || []) as Operation[],
+      yarnItems: snakeToCamel(yarnItemsRes.rows || []) as YarnItem[],
+      yarnBatches: snakeToCamel(yarnBatchesRes.rows || []) as YarnBatch[],
+      yarnMovements: snakeToCamel(yarnMovementsRes.rows || []) as YarnMovement[],
+      outputEvents: snakeToCamel(outputEventsRes.rows || []) as OutputEvent[],
+      inspectionEvents: snakeToCamel(qualityInspectionsRes.rows || []) as InspectionEvent[],
+      reworkEvents: snakeToCamel(reworkEventsRes.rows || []) as ReworkEvent[],
+      dispatchEvents: snakeToCamel(dispatchEventsRes.rows || []) as DispatchEvent[],
+      machineEvents: snakeToCamel(machineEventsRes.rows || []) as MachineEvent[],
     };
   } catch (error) {
-    console.error("Error fetching data from Supabase:", error);
+    console.error("Error fetching data from PostgreSQL:", error);
     return {};
   }
 }
 
 export async function createOrderInSupabase(orderData: Partial<Order>) {
-  const { data, error } = await supabase.from("orders").insert([orderData]).select().single();
-  if (error) throw error;
-  return data;
+  const keys = Object.keys(orderData);
+  const snakeKeys = keys.map(k => k.replace(/([A-Z])/g, "_$1").toLowerCase());
+  const values = Object.values(orderData);
+  const placeholders = keys.map((_, i) => `$${i + 1}`).join(", ");
+
+  const query = `
+    INSERT INTO orders (${snakeKeys.join(", ")})
+    VALUES (${placeholders})
+    RETURNING *
+  `;
+  const res = await pool.query(query, values);
+  return snakeToCamel(res.rows[0]);
 }
 
 export async function updateMachineStatusInSupabase(code: string, status: string) {
-  const { data, error } = await supabase.from("machines").update({ status }).eq("code", code).select().single();
-  if (error) throw error;
-  return data;
+  const res = await pool.query(
+    "UPDATE machines SET status = $1 WHERE code = $2 RETURNING *",
+    [status, code]
+  );
+  return snakeToCamel(res.rows[0]);
 }
 
 export async function updateRollStatusInSupabase(code: string, status: string, location?: string) {
-  const updateData: Record<string, unknown> = { status };
-  if (location) updateData.location = location;
-  const { data, error } = await supabase.from("fabric_rolls").update(updateData).eq("code", code).select().single();
-  if (error) throw error;
-  return data;
+  let query = "UPDATE fabric_rolls SET status = $1";
+  const params: any[] = [status];
+  if (location) {
+    query += ", location = $2 WHERE code = $3 RETURNING *";
+    params.push(location, code);
+  } else {
+    query += " WHERE code = $2 RETURNING *";
+    params.push(code);
+  }
+  const res = await pool.query(query, params);
+  return snakeToCamel(res.rows[0]);
 }

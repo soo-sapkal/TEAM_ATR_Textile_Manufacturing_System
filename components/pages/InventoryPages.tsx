@@ -13,7 +13,6 @@ import { formatDateTime, formatMoney, formatQty } from "@/lib/domain/format";
 import { Button, Card, DataTable, EmptyState, Field, InfoStrip, LinkButton, PageHeader, SelectInput, StatCard, StatusBadge, Tag, TextArea, TextInput } from "@/components/ui/primitives";
 import type { YarnItem } from "@/lib/domain/types";
 import { adjustmentRequestSchema } from "@/lib/domain/schemas";
-import { supabase } from "@/lib/supabase/client";
 
 export function InventoryRoute({ path, id }: { path: string; id?: string }) {
   if (path === "/inventory/receive") return <YarnReceiptPage/>;

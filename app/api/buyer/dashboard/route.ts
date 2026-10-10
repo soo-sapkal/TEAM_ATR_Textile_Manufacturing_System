@@ -1,12 +1,9 @@
+import { pool } from "@/lib/db";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { Pool } from "pg";
 import { verifyToken } from "@/lib/auth/auth";
 import { ROLE_PERMISSIONS } from "@/lib/auth/permissions";
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || "postgresql://postgres.xaqbisnaetgsjiortzgi:sohamsapkal@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres",
-});
 
 async function getUser() {
   const cookieStore = await cookies();
