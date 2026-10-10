@@ -171,3 +171,45 @@ In addition to the fulfillment workflow, the Dispatch Officer needs to proactive
    - Add a widget/KPI card on the Dispatch Dashboard highlighting orders with approaching delivery deadlines (e.g., "Due in next 48 hours").
 2. **Prioritization Flags:**
    - On the Pending Orders list, prominently flag and sort orders that have nearby deadlines so the logistics team can prioritize loading them first.
+
+---
+
+# Task 10 - GJ: Quality Control Dashboard Redesign
+
+**Context & Requirements:**
+The Quality team needs a dedicated dashboard under `quality/` to manage pending inspections efficiently and align their work with production deadlines.
+
+1. **Pending Inspection Queue:**
+   - Create a dedicated section/page to clearly display how much material (rolls, batches, etc.) is currently pending quality checks.
+   - Show aggregate metrics (e.g., "Total Meters Pending", "Batches Awaiting Inspection").
+
+2. **Active Orders Overview:**
+   - Display the volume of active, pending orders that are waiting on quality-approved stock to proceed to dispatch.
+
+3. **Smart Prioritization & Stock Suggestions:**
+   - Add a separate "Action Required" or "Suggestions" section that explicitly tells the QC team which stock to check *first*.
+   - This prioritization must be driven by the delivery deadlines of the pending orders (i.e., inspect goods needed for tomorrow's dispatch before goods needed next week).
+
+4. **Industry-Standard QC Features (Extra Additions):**
+   - **Defect Logging & Pareto Analysis:** Allow inspectors to categorize defects (e.g., stains, tears, shade variation) and display a quick chart of top defect types for the day/shift.
+   - **First Time Yield (FTY) KPI:** Add a metric card showing the percentage of rolls passing QC on the first try versus needing rework.
+   - **Rework Routing:** Direct integration to send failed rolls immediately to a rework queue with attached notes/reasons.
+   - **Shift Performance:** Show how many inspections the current shift has completed versus their daily target.
+
+---
+
+# Task 11 - GJ: Cloudinary Image Storage Implementation
+
+**Context & Requirements:**
+Several areas of the application require robust image storage (e.g., quality inspection evidence, defect photos, user avatars, etc.). 
+
+1. **Cloudinary Integration:**
+   - Set up and integrate Cloudinary as the primary remote image storage solution across the entire project.
+   - Ensure secure uploads from the client or server (depending on architecture constraints).
+
+2. **Replace Local/Demo Storage:**
+   - Identify all locations in the codebase where images are currently handled via local state, temporary demo storage, or mock URLs.
+   - Replace these implementations with real Cloudinary upload and fetch logic.
+   
+3. **Optimized Delivery:**
+   - Use Cloudinary's transformation APIs to ensure images are served in optimal formats and sizes (e.g., thumbnails for lists, full resolution for detailed modal views).
