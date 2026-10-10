@@ -66,6 +66,9 @@ export const ROLE_NAVIGATION: Record<string, { label: string; items: { label: st
     { label: "Assets", items: [
       { label: "Inventory", href: "/supervisor/inventory", icon: "inventory" },
       { label: "Machines", href: "/supervisor/machines", icon: "machine" }
+    ] },
+    { label: "Logistics", items: [
+      { label: "Dispatch", href: "/supervisor/dispatch", icon: "dispatch" }
     ] }
   ],
   MACHINE_OPERATOR: [

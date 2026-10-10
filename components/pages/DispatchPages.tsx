@@ -14,6 +14,86 @@ import { BrandMark, Button, Card, DataTable, EmptyState, Field, InfoStrip, Kicke
 import type { FabricRoll } from "@/lib/domain/types";
 import { Can } from "@/components/ui/Can";
 
+export function SupervisorDispatchDashboard() {
+  const { data, toast } = useDemo();
+  const [timeframe, setTimeframe] = useState("Today");
+
+  const filteredShipments = data.shipments;
+  
+  const pending = filteredShipments.filter(s => s.status !== "DISPATCHED");
+  const completed = filteredShipments.filter(s => s.status === "DISPATCHED");
+  
+  const fulfillmentRate = filteredShipments.length ? (completed.length / filteredShipments.length * 100).toFixed(0) : "0";
+  const totalVolume = completed.reduce((sum, s) => sum.plus(s.qty), new Decimal(0));
+  const totalRolls = completed.reduce((sum, s) => sum + (s.rolls || 0), 0);
+  
+  const now = Date.now();
+  const delayedShipments = pending.filter(s => new Date(s.plannedAt).getTime() < now);
+
+  return (
+    <>
+      <PageHeader 
+        eyebrow="Logistics Oversight" 
+        title="Dispatch Dashboard" 
+        description="Monitor daily shipments, volume, and dispatch performance." 
+        actions={<Button variant="primary" onClick={() => { toast("Manifest Generated", "Daily dispatch manifest ready for printing.", "success"); window.print(); }} style={{ border: "2px solid #000", boxShadow: "3px 3px 0 #000" }}><Printer size={16}/> Daily Manifest</Button>} 
+      />
+
+      <div className="filter-row" role="group" style={{ marginBottom: 24 }}>
+        {["Today", "Yesterday", "This Week", "This Month", "Custom Range"].map(t => (
+          <button key={t} className={`filter-chip ${timeframe === t ? "filter-chip--active" : ""}`} style={{ border: "2px solid #000", fontWeight: "bold" }} onClick={() => setTimeframe(t)}>{t}</button>
+        ))}
+      </div>
+
+      <div className="stat-grid" style={{ marginBottom: 32 }}>
+        <div style={{ border: "3px solid #000", boxShadow: "4px 4px 0px #000", padding: "20px", background: "var(--neem)", display: "flex", flexDirection: "column", gap: "8px" }}>
+          <div style={{ fontSize: "0.9rem", fontWeight: 700, textTransform: "uppercase" }}>Fulfillment Rate</div>
+          <div style={{ fontSize: "2rem", fontWeight: 900 }}>{fulfillmentRate}%</div>
+          <div style={{ fontSize: "0.85rem", color: "#444", fontWeight: 600 }}>{completed.length} completed / {pending.length} pending</div>
+        </div>
+        <div style={{ border: "3px solid #000", boxShadow: "4px 4px 0px #000", padding: "20px", background: "var(--cotton)", display: "flex", flexDirection: "column", gap: "8px" }}>
+          <div style={{ fontSize: "0.9rem", fontWeight: 700, textTransform: "uppercase" }}>Dispatched Volume</div>
+          <div style={{ fontSize: "2rem", fontWeight: 900 }}>{formatQty(totalVolume.toFixed(0), "M", 0)}</div>
+          <div style={{ fontSize: "0.85rem", color: "#444", fontWeight: 600 }}>{totalRolls} total rolls</div>
+        </div>
+        <div style={{ border: "3px solid #000", boxShadow: "4px 4px 0px #000", padding: "20px", background: delayedShipments.length > 0 ? "var(--madder)" : "var(--indigo)", display: "flex", flexDirection: "column", gap: "8px", color: delayedShipments.length > 0 ? "#fff" : "inherit" }}>
+          <div style={{ fontSize: "0.9rem", fontWeight: 700, textTransform: "uppercase" }}>Urgent / Delayed</div>
+          <div style={{ fontSize: "2rem", fontWeight: 900 }}>{delayedShipments.length}</div>
+          <div style={{ fontSize: "0.85rem", fontWeight: 600 }}>Missed scheduled slots</div>
+        </div>
+      </div>
+
+      <section className="card" style={{ border: "3px solid #000", boxShadow: "4px 4px 0px #000", background: "#fff" }}>
+        <div className="card__head">
+          <h2>Today's Shipments</h2>
+          <Tag>{filteredShipments.length} records</Tag>
+        </div>
+        <DataTable 
+          headers={["Shipment", "Order / Buyer", "Planned", "Volume", "Vehicle", "Status", "Actions"]} 
+          rows={filteredShipments.map(shipment => {
+            const isDelayed = shipment.status !== "DISPATCHED" && new Date(shipment.plannedAt).getTime() < now;
+            return [
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {isDelayed && <ShieldAlert size={16} color="var(--madder)" />}
+                <Link href={`/dispatch/${shipment.id}`} className="code" style={{ fontWeight: 700, color: isDelayed ? "var(--madder)" : "inherit", textDecoration: "none" }}>{shipment.code}</Link>
+              </div>,
+              <div>
+                <Link href={`/orders/${encodeURIComponent(shipment.orderCode)}`} className="cell-primary">{shipment.orderCode}</Link>
+                <span className="cell-secondary">{shipment.buyer}</span>
+              </div>,
+              <span style={{ color: isDelayed ? "var(--madder)" : "inherit", fontWeight: isDelayed ? "bold" : "normal" }}>{formatDateTime(shipment.plannedAt)}</span>,
+              <span>{shipment.rolls} rolls <span className="cell-secondary">· {formatQty(shipment.qty, shipment.unit, 0)}</span></span>,
+              shipment.vehicle || "—",
+              isDelayed ? <StatusBadge status="QUARANTINED" label="DELAYED" /> : <StatusBadge status={shipment.status} />,
+              <Link href={`/dispatch/${shipment.id}`} className="btn btn--secondary btn--sm" style={{ border: isDelayed ? "2px solid var(--madder)" : "2px solid #000", boxShadow: "2px 2px 0px #000", fontWeight: "bold" }}>View <ArrowRight size={12}/></Link>
+            ];
+          })}
+        />
+      </section>
+    </>
+  );
+}
+
 export function DispatchRoute({ path, id }: { path: string; id?: string }) {
   if (path === "/dispatch/new") return <NewShipmentPage/>;
   if (path === "/dispatch/stock") return <FinishedStockPage/>;
@@ -38,18 +118,33 @@ function NewShipmentPage() {
   const { data, act, toast, user } = useDemo();
   const orders = data.orders.filter((order) => new Decimal(order.available).gt(0));
   const [orderCode, setOrderCode] = useState(orders.find((order) => order.displayStatus === "READY_FOR_DISPATCH")?.code ?? orders[0]?.code ?? "");
-  const [selected, setSelected] = useState<string[]>([]);
+  const [selected, setSelected] = useState<Record<string, string>>({});
   const [vehicle, setVehicle] = useState("KA-01-AB-1234");
   const [plannedAt, setPlannedAt] = useState("2026-10-11T11:00");
   const [busy, setBusy] = useState(false);
   const order = data.orders.find((candidate) => candidate.code === orderCode);
   const eligible = data.rolls.filter((roll) => roll.status === "ACCEPTED" && roll.orderCode === orderCode && roll.unit === (order?.unit ?? "M"));
-  const chosen = eligible.filter((roll) => selected.includes(roll.id));
-  const total = chosen.reduce((sum, roll) => sum.plus(roll.qty), new Decimal(0));
+  const chosen = eligible.filter((roll) => Object.hasOwn(selected, roll.id));
+  const total = chosen.reduce((sum, roll) => {
+    const qtyStr = selected[roll.id];
+    const parsed = parseFloat(qtyStr);
+    return sum.plus(Number.isFinite(parsed) ? parsed : 0);
+  }, new Decimal(0));
   const withinBalance = Boolean(order && total.lte(order.available));
   const selectionValid = chosen.length > 0 && chosen.every((roll) => roll.status === "ACCEPTED" && roll.orderCode === orderCode) && new Set(chosen.map((roll) => roll.unit)).size === 1 && withinBalance;
-  function changeOrder(value: string) { setOrderCode(value); setSelected([]); }
-  function toggle(id: string) { setSelected((current) => current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id]); }
+  function changeOrder(value: string) { setOrderCode(value); setSelected({}); }
+  function toggle(id: string, fullQty: string) {
+    setSelected((current) => {
+      const next = { ...current };
+      if (Object.hasOwn(next, id)) delete next[id];
+      else next[id] = fullQty;
+      return next;
+    });
+  }
+  function updateQty(id: string, qty: string) {
+    if (!Object.hasOwn(selected, id)) return;
+    setSelected((current) => ({ ...current, [id]: qty }));
+  }
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!selectionValid) { toast("Load is not eligible", "Select accepted rolls from one order and keep the total at or below the remaining available quantity.", "error"); return; }
@@ -58,12 +153,12 @@ function NewShipmentPage() {
     if (!Number.isFinite(time.getTime())) { toast("Planned load time is invalid", "Choose a valid local date and time.", "error"); return; }
     if (!hasPermission(user, "dispatch.create")) { toast("Shipment creation is read-only", "This action requires dispatch.create.", "error"); return; }
     setBusy(true);
-    const commandKey = `create-shipment:${orderCode}:${[...selected].sort().join(",")}:${vehicle.trim()}:${plannedAt}`;
-    const response = await act("create-shipment", { commandKey, orderCode, rollIds: selected, vehicle: vehicle.trim(), plannedAt: time.toISOString() });
+    const commandKey = `create-shipment:${orderCode}:${Object.keys(selected).sort().join(",")}:${vehicle.trim()}:${plannedAt}`;
+    const response = await act("create-shipment", { commandKey, orderCode, rollIds: Object.keys(selected), vehicle: vehicle.trim(), plannedAt: time.toISOString() });
     setBusy(false);
     if (response.ok && response.reference) router.push(`/dispatch/${encodeURIComponent(response.reference)}`);
   }
-  return <><PageHeader eyebrow="Build a load · allocation" title="New shipment" description="Choose an order, then allocate only rolls in ACCEPTED state. The same-order, exact-unit and available-balance checks are repeated at submit." actions={<LinkButton href="/dispatch" variant="secondary"><ArrowLeft size={14}/> Dispatch desk</LinkButton>} meta={<><Tag>RECORDER · {user?.name}</Tag><Tag>DEMO ONLY</Tag></>} /><div className="two-pane"><form className="stack" onSubmit={submit}><Card title="1 · Choose order and truck"><div className="form-grid"><Field label="Order"><SelectInput value={orderCode} onChange={(event) => changeOrder(event.target.value)}>{orders.map((item) => <option key={item.code} value={item.code}>{item.code} · {item.buyer}</option>)}</SelectInput></Field><Field label="Vehicle / transport reference"><TextInput value={vehicle} onChange={(event) => setVehicle(event.target.value)} required/></Field><Field label="Planned load time"><TextInput type="datetime-local" value={plannedAt} onChange={(event) => setPlannedAt(event.target.value)} required/></Field><Field label="Buyer balance"><TextInput value={order ? formatQty(order.available, order.unit, 1) : "—"} readOnly/></Field></div></Card><Card title="2 · Pick accepted rolls" action={<Tag>{eligible.length} eligible</Tag>}><DataTable headers={["Pick", "Roll", "Colour / lot", "Qty", "Location", "State"]} rows={eligible.map((roll) => [<input aria-label={`Select ${roll.code}`} type="checkbox" checked={selected.includes(roll.id)} onChange={() => toggle(roll.id)} style={{ width: 20, height: 20 }}/>, <Link href={`/rolls/${roll.code}`} className="code">{roll.code}</Link>, `${roll.colour} · ${roll.dyeLot}`, formatQty(roll.qty,roll.unit,1), roll.location, <StatusBadge status={roll.status}/>])} empty={<EmptyState title="No accepted rolls for this order" detail="Complete inspection and create accepted finished stock first."/>}/><div className="info-strip info-strip--warning"><ShieldAlert size={17}/><div><strong>Allocation check</strong><div>{chosen.length} selected · {formatQty(total.toFixed(3),order?.unit ?? "M",1)} · available {order ? formatQty(order.available,order.unit,1) : "—"} · {withinBalance ? "within balance" : "exceeds available"}</div></div></div></Card><div className="form-actions"><span className="field__hint">Only the live backend can issue durable shipment/invoice codes.</span><Button type="submit" size="lg" disabled={busy || !selectionValid || !hasPermission(user,"dispatch.create")}>{busy ? "Creating…" : "Create draft shipment"} <ArrowRight size={16}/></Button></div></form><aside className="stack sticky-summary"><Card title="Load preview"><Kicker>Selected rolls</Kicker><strong style={{ display: "block", marginTop: 8, font: "900 28px var(--font-display)" }}>{chosen.length}</strong><div className="num" style={{ fontSize: 19, marginTop: 3 }}>{formatQty(total.toFixed(3),order?.unit ?? "M",1)}</div><div className="stack-sm" style={{ marginTop: 12 }}>{chosen.map((roll) => <div className="permission-note" key={roll.id}><Link className="code" href={`/rolls/${roll.code}`}>{roll.code}</Link><span className="cell-secondary">{roll.orderCode} · {formatQty(roll.qty,roll.unit,1)}</span></div>)}</div>{chosen.length === 0 && <p className="cell-secondary">Select rolls to prepare a load.</p>}</Card><Card title="Policy notes"><InfoStrip tone="info">The server should create the shipment and reserve rolls atomically, with idempotency, state checks, same-order validation, unit checks, and remaining-tolerance check.</InfoStrip><InfoStrip tone="warning">After creation, reload before confirmation. The list of reserved rolls must still match this draft; don&apos;t optimistically show dispatched status.</InfoStrip></Card></aside></div></>;
+  return <><PageHeader eyebrow="Build a load · allocation" title="New shipment" description="Choose an order, then allocate only rolls in ACCEPTED state. The same-order, exact-unit and available-balance checks are repeated at submit." actions={<LinkButton href="/dispatch" variant="secondary"><ArrowLeft size={14}/> Dispatch desk</LinkButton>} meta={<><Tag>RECORDER · {user?.name}</Tag><Tag>DEMO ONLY</Tag></>} /><div className="two-pane"><form className="stack" onSubmit={submit}><Card title="1 · Choose order and truck"><div className="form-grid"><Field label="Order"><SelectInput value={orderCode} onChange={(event) => changeOrder(event.target.value)}>{orders.map((item) => <option key={item.code} value={item.code}>{item.code} · {item.buyer}</option>)}</SelectInput></Field><Field label="Vehicle / transport reference"><TextInput value={vehicle} onChange={(event) => setVehicle(event.target.value)} required/></Field><Field label="Planned load time"><TextInput type="datetime-local" value={plannedAt} onChange={(event) => setPlannedAt(event.target.value)} required/></Field><Field label="Buyer balance"><TextInput value={order ? formatQty(order.available, order.unit, 1) : "—"} readOnly/></Field></div></Card><Card title="2 · Pick accepted rolls" action={<Tag>{eligible.length} eligible</Tag>}><DataTable headers={["Pick", "Roll", "Colour / lot", "Qty", "Dispatch Qty", "Location", "State"]} rows={eligible.map((roll) => [<input aria-label={`Select ${roll.code}`} type="checkbox" checked={Object.hasOwn(selected, roll.id)} onChange={() => toggle(roll.id, String(roll.qty))} style={{ width: 20, height: 20 }}/>, <Link href={`/rolls/${roll.code}`} className="code">{roll.code}</Link>, `${roll.colour} · ${roll.dyeLot}`, formatQty(roll.qty,roll.unit,1), Object.hasOwn(selected, roll.id) ? <TextInput type="number" step="0.1" max={String(roll.qty)} value={selected[roll.id]} onChange={(e) => updateQty(roll.id, e.target.value)} style={{ width: "100px" }} /> : "—", roll.location, <StatusBadge status={roll.status}/>])} empty={<EmptyState title="No accepted rolls for this order" detail="Complete inspection and create accepted finished stock first."/>}/><div className="info-strip info-strip--warning"><ShieldAlert size={17}/><div><strong>Allocation check</strong><div>{chosen.length} selected · {formatQty(total.toFixed(3),order?.unit ?? "M",1)} · available {order ? formatQty(order.available,order.unit,1) : "—"} · {withinBalance ? "within balance" : "exceeds available"}</div></div></div></Card><div className="form-actions"><span className="field__hint">Only the live backend can issue durable shipment/invoice codes.</span><Button type="submit" size="lg" disabled={busy || !selectionValid || !hasPermission(user,"dispatch.create")}>{busy ? "Creating…" : "Create draft shipment"} <ArrowRight size={16}/></Button></div></form><aside className="stack sticky-summary"><Card title="Load preview"><Kicker>Selected rolls</Kicker><strong style={{ display: "block", marginTop: 8, font: "900 28px var(--font-display)" }}>{chosen.length}</strong><div className="num" style={{ fontSize: 19, marginTop: 3 }}>{formatQty(total.toFixed(3),order?.unit ?? "M",1)}</div><div className="stack-sm" style={{ marginTop: 12 }}>{chosen.map((roll) => <div className="permission-note" key={roll.id}><Link className="code" href={`/rolls/${roll.code}`}>{roll.code}</Link><span className="cell-secondary">{roll.orderCode} · {formatQty(selected[roll.id] || "0",roll.unit,1)} {Number(selected[roll.id]) < Number(roll.qty) && "(Partial)"}</span></div>)}</div>{chosen.length === 0 && <p className="cell-secondary">Select rolls to prepare a load.</p>}</Card><Card title="Policy notes"><InfoStrip tone="info">The server should create the shipment and reserve rolls atomically, with idempotency, state checks, same-order validation, unit checks, and remaining-tolerance check. For partial dispatch, remaining quantity is returned as an offcut.</InfoStrip><InfoStrip tone="warning">After creation, reload before confirmation. The list of reserved rolls must still match this draft; don&apos;t optimistically show dispatched status.</InfoStrip></Card></aside></div></>;
 }
 
 function FinishedStockPage() {

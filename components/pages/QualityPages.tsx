@@ -4,8 +4,9 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import Decimal from "decimal.js";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, Camera, ClipboardCheck, QrCode, ScanLine, Search } from "lucide-react";
+import { ArrowLeft, ArrowRight, Camera, ClipboardCheck, QrCode, ScanLine, Search, ChevronDown, ChevronRight, Printer, Box } from "lucide-react";
 import { useDemo } from "@/lib/demo/context";
 import { hasPermission } from "@/lib/auth/permissions";
 import { formatDateTime, formatQty } from "@/lib/domain/format";
@@ -169,7 +170,121 @@ function CameraScanner({ onCode }: { onCode: (value: string) => void }) {
   return <div className="camera-scanner"><div className="camera-scanner__controls"><Button type="button" variant="secondary" disabled={scanning} onClick={() => { void start(); }}><Camera size={15}/>{scanning ? "Camera active" : "Start camera"}</Button>{scanning && <Button type="button" variant="quiet" onClick={stop}>Stop camera</Button>}</div><p className="field__hint" role="status" aria-live="polite">{message}</p><video ref={videoRef} className="camera-scanner__video" muted playsInline aria-label="QR scanning camera preview" hidden={!scanning}/></div>;
 }
 
+function FinalGoodsDashboard() {
+  const { data, toast } = useDemo();
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [expandedProduct, setExpandedProduct] = useState<string | null>(null);
+
+  const productsMap = new Map<string, typeof data.rolls>();
+  data.rolls.forEach(roll => {
+    const order = data.orders.find(o => o.code === roll.orderCode);
+    const product = order?.product || "Unknown Product";
+    if (!productsMap.has(product)) productsMap.set(product, []);
+    productsMap.get(product)!.push(roll);
+  });
+
+  const totalAvailableQty = data.rolls.filter(r => r.status === "ACCEPTED").reduce((sum, r) => sum.plus(r.qty), new Decimal(0));
+  const totalRolls = data.rolls.length;
+  const pendingDispatch = data.rolls.filter(r => r.status === "RESERVED").length;
+
+  return (
+    <>
+      <PageHeader eyebrow="Warehouse Operations" title="Final Goods Inventory" description="High-level available inventory and roll-level details." />
+      <div className="stat-grid" style={{ marginBottom: 24 }}>
+        <div style={{ border: "3px solid #000", boxShadow: "4px 4px 0px #000", padding: "20px", background: "var(--neem)", display: "flex", flexDirection: "column", gap: "8px" }}>
+          <div style={{ fontSize: "0.9rem", fontWeight: 700, textTransform: "uppercase" }}>Total Available (M)</div>
+          <div style={{ fontSize: "2rem", fontWeight: 900 }}>{totalAvailableQty.toFixed(2)}</div>
+        </div>
+        <div style={{ border: "3px solid #000", boxShadow: "4px 4px 0px #000", padding: "20px", background: "var(--cotton)", display: "flex", flexDirection: "column", gap: "8px" }}>
+          <div style={{ fontSize: "0.9rem", fontWeight: 700, textTransform: "uppercase" }}>Total Rolls in Stock</div>
+          <div style={{ fontSize: "2rem", fontWeight: 900 }}>{totalRolls}</div>
+        </div>
+        <div style={{ border: "3px solid #000", boxShadow: "4px 4px 0px #000", padding: "20px", background: "var(--indigo)", display: "flex", flexDirection: "column", gap: "8px" }}>
+          <div style={{ fontSize: "0.9rem", fontWeight: 700, textTransform: "uppercase" }}>Pending Dispatch</div>
+          <div style={{ fontSize: "2rem", fontWeight: 900, color: "#fff" }}>{pendingDispatch}</div>
+        </div>
+      </div>
+
+      <div className="filter-row" role="group" style={{ marginBottom: 20 }}>
+        {["ALL", "ACCEPTED", "QUARANTINED", "RESERVED", "DISPATCHED"].map(item => (
+          <button key={item} className={`filter-chip ${statusFilter === item ? "filter-chip--active" : ""}`} style={{ border: "2px solid #000", fontWeight: "bold" }} onClick={() => setStatusFilter(item)}>{item.replace("_", " ")}</button>
+        ))}
+        <label className="search-box" style={{ width: 250, marginLeft: "auto", border: "2px solid #000" }}>
+          <Search size={14}/>
+          <input aria-label="Search" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search Roll ID or Product..." style={{ background: "transparent", border: "none", outline: "none", width: "100%" }} />
+        </label>
+      </div>
+
+      <div className="stack" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        {Array.from(productsMap.entries()).map(([product, rolls]) => {
+          const filteredRolls = rolls.filter(r => 
+            (statusFilter === "ALL" || r.status === statusFilter) &&
+            (!query || r.code.toLowerCase().includes(query.toLowerCase()) || product.toLowerCase().includes(query.toLowerCase()))
+          );
+          if (filteredRolls.length === 0) return null;
+
+          const isExpanded = expandedProduct === product;
+          const totalQty = filteredRolls.reduce((sum, r) => sum.plus(r.qty), new Decimal(0));
+          const acceptedCount = filteredRolls.filter(r => r.status === "ACCEPTED").length;
+
+          return (
+            <section key={product} className="card" style={{ border: "3px solid #000", boxShadow: "4px 4px 0px #000", padding: "16px", background: "#fff", transition: "all 0.2s ease" }}>
+              <div 
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
+                onClick={() => setExpandedProduct(isExpanded ? null : product)}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                   {isExpanded ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+                   <h3 style={{ margin: 0, fontSize: "1.2rem", fontWeight: 700 }}>{product}</h3>
+                </div>
+                <div style={{ display: "flex", gap: 24, alignItems: "center" }}>
+                   <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: "0.85rem", color: "#666", fontWeight: 600, textTransform: "uppercase" }}>Quantity</div>
+                      <div style={{ fontWeight: 800, fontSize: "1.1rem" }}>{formatQty(totalQty.toFixed(2), "M", 1)}</div>
+                   </div>
+                   <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: "0.85rem", color: "#666", fontWeight: 600, textTransform: "uppercase" }}>Rolls</div>
+                      <div style={{ fontWeight: 800, fontSize: "1.1rem" }}>{filteredRolls.length}</div>
+                   </div>
+                   <div style={{ textAlign: "right", paddingLeft: 16, borderLeft: "2px solid #000" }}>
+                      <StatusBadge status={acceptedCount === filteredRolls.length ? "ACCEPTED" : "QUARANTINED"} label={`${acceptedCount} Accepted`} />
+                   </div>
+                </div>
+              </div>
+
+              {isExpanded && (
+                <div style={{ marginTop: 20, paddingTop: 20, borderTop: "2px solid #000" }}>
+                  <DataTable 
+                    headers={["Roll ID", "Location", "Grade", "Status", "Qty", "Date", "Actions"]} 
+                    rows={filteredRolls.map(roll => [
+                      <Link href={`/rolls/${roll.code}`} className="code" style={{ fontWeight: 700, textDecoration: "none" }}>{roll.code}</Link>,
+                      roll.location,
+                      roll.priorFailure ? <span style={{ color: "var(--madder)", fontWeight: "bold" }}>Grade B</span> : <span style={{ color: "var(--neem)", fontWeight: "bold" }}>Grade A</span>,
+                      <StatusBadge status={roll.status} />,
+                      formatQty(roll.qty, roll.unit, 1),
+                      formatDateTime(roll.createdAt),
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <Button size="sm" variant="secondary" style={{ border: "2px solid #000", boxShadow: "2px 2px 0px #000" }} onClick={(e) => { e.stopPropagation(); toast("Label Printed", `Barcode printed for ${roll.code}`, "success"); }} title="Print Label"><Printer size={14} /></Button>
+                        <Button size="sm" variant="primary" style={{ border: "2px solid #000", boxShadow: "2px 2px 0px #000" }} onClick={(e) => { e.stopPropagation(); toast("Allocation Triggered", "Allocation workflow opened in demo mode.", "info"); }} title="Allocate to Order"><Box size={14} /></Button>
+                      </div>
+                    ])}
+                  />
+                </div>
+              )}
+            </section>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
 function RollRegistryPage({ scanOnly }: { scanOnly: boolean }) {
+  if (!scanOnly) {
+    return <FinalGoodsDashboard />;
+  }
+
   const { data } = useDemo();
   const router = useRouter();
   const [query, setQuery] = useState("");
@@ -197,8 +312,8 @@ function RollRegistryPage({ scanOnly }: { scanOnly: boolean }) {
   function lookup(event: FormEvent) { event.preventDefault(); lookupCode(query); }
   return <><PageHeader eyebrow={scanOnly ? "Traceability · scan lookup" : "Traceability · roll register"} title={scanOnly ? "Find a roll" : "Rolls"} description="Lookup accepts a staff roll code or QR containing an authorized roll code. Public signed tokens are never resolved into a staff passport in demo mode." actions={<><LinkButton href="/quality" variant="secondary"><ArrowLeft size={14}/> Quality</LinkButton>{!scanOnly && <LinkButton href="/scan" variant="primary"><ScanLine size={14}/> Scan / lookup</LinkButton>}</>} />
     {scanOnly && <Card title="Camera scan (optional)"><CameraScanner onCode={(value) => { setQuery(value); setError(""); lookupCode(value); }}/><div className="permission-note">Camera is opt-in and used only to read local QR content. The printed demo roll tag has no QR; the live system must supply a signed opaque token to enable public scans.</div></Card>}
-    {scanOnly && <Card title="Manual roll-code lookup"><form className="form-grid" onSubmit={lookup}><Field label="Roll code or scanned QR content" className="col-8"><div style={{ position: "relative" }}><TextInput autoFocus value={query} onChange={(event) => { setQuery(event.target.value); setError(""); setShowDropdown(true); }} onFocus={() => setShowDropdown(true)} onBlur={() => setTimeout(() => setShowDropdown(false), 200)} placeholder="ROLL-2026-0111" />{showDropdown && dropdownOptions.length > 0 && <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 10, background: "#fff", border: "2px solid #000", maxHeight: 250, overflowY: "auto", boxShadow: "4px 4px 0 #000", display: "flex", flexDirection: "column" }}>{dropdownOptions.map((r) => <div key={r.code} style={{ padding: "10px 12px", cursor: "pointer", borderBottom: "1px solid #000", fontWeight: 500 }} onMouseDown={() => { setQuery(r.code); setShowDropdown(false); }} onMouseEnter={(e) => e.currentTarget.style.background = "#f0f0f0"} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>{r.code} <span style={{ color: "#666", fontWeight: 400, marginLeft: 8 }}>· {r.orderCode}</span></div>)}</div>}</div></Field><div className="col-4" style={{ display: "flex", alignItems: "end" }}><Button type="submit" size="lg"><QrCode size={16}/> Look up roll</Button></div></form><div className="permission-note" style={{ marginTop: 12 }}>Only roll codes already present in this local demo registry resolve to a staff view. Buyer-safe token lookup requires the verified backend API and RLS.</div>{error && <p role="alert" className="field__error">{error}</p>}</Card>}
-    {!scanOnly && <div className="filter-row" role="group" aria-label="Filter roll registry">{["ALL","ACCEPTED","AWAITING_INSPECTION","REWORK_REQUIRED","QUARANTINED","DISPATCHED"].map((item) => <button key={item} className={`filter-chip${status === item ? " filter-chip--active" : ""}`} onClick={() => setStatus(item)}>{item.replaceAll("_"," ")}</button>)}<label className="search-box" style={{ width: 220, marginLeft: "auto" }}><Search size={14}/><input aria-label="Search roll codes" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search roll / order…"/></label></div>}
+    {scanOnly && <Card title="Manual roll-code lookup"><form className="form-grid" onSubmit={lookup}><Field label="Roll code or scanned QR content" className="col-8"><div style={{ position: "relative" }}><TextInput autoFocus value={query} onChange={(event) => { setQuery(event.target.value); setError(""); setShowDropdown(true); }} onClick={() => setShowDropdown(true)} onBlur={() => setTimeout(() => setShowDropdown(false), 200)} placeholder="ROLL-2026-0111" /><div style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none", color: "#666" }}><ChevronDown size={16}/></div>{showDropdown && dropdownOptions.length > 0 && <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 10, background: "#fff", border: "2px solid #000", maxHeight: 250, overflowY: "auto", boxShadow: "4px 4px 0 #000", display: "flex", flexDirection: "column" }}>{dropdownOptions.map((r) => <div key={r.code} style={{ padding: "10px 12px", cursor: "pointer", borderBottom: "1px solid #000", fontWeight: 500 }} onMouseDown={() => { setQuery(r.code); setShowDropdown(false); }} onMouseEnter={(e) => e.currentTarget.style.background = "#f0f0f0"} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>{r.code} <span style={{ color: "#666", fontWeight: 400, marginLeft: 8 }}>· {r.orderCode}</span></div>)}</div>}</div></Field><div className="col-4" style={{ display: "flex", alignItems: "end" }}><Button type="submit" size="lg"><QrCode size={16}/> Look up roll</Button></div></form><div className="permission-note" style={{ marginTop: 12 }}>Only roll codes already present in this local demo registry resolve to a staff view. Buyer-safe token lookup requires the verified backend API and RLS.</div>{error && <p role="alert" className="field__error">{error}</p>}</Card>}
+    {scanOnly && <div className="filter-row" role="group" aria-label="Filter roll registry">{["ALL","ACCEPTED","AWAITING_INSPECTION","REWORK_REQUIRED","QUARANTINED","DISPATCHED"].map((item) => <button key={item} className={`filter-chip${status === item ? " filter-chip--active" : ""}`} onClick={() => setStatus(item)}>{item.replaceAll("_"," ")}</button>)}<label className="search-box" style={{ width: 220, marginLeft: "auto" }}><Search size={14}/><input aria-label="Search roll codes" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search roll / order…"/></label></div>}
     <Card title={scanOnly ? "Recent rolls" : "Roll register"} action={<Tag>{rolls.length} in view</Tag>}><DataTable headers={["Roll", "Order / buyer", "Quantity", "Dye lot", "Machine", "State", "Prior failure", "Passport"]} rows={rolls.map((roll) => [<Link className="cell-primary code" href={`/rolls/${roll.code}`}>{roll.code}</Link>, <div><Link href={`/orders/${encodeURIComponent(roll.orderCode)}`} className="cell-primary">{roll.orderCode}</Link><span className="cell-secondary">{roll.buyer}</span></div>, formatQty(roll.qty,roll.unit,1), roll.dyeLot, roll.machineCode, <StatusBadge status={roll.status}/>, roll.priorFailure ? <StatusBadge status="REWORK_REQUIRED" label="History retained"/> : "—", <Link href={`/rolls/${roll.code}`} className="btn btn--secondary btn--sm">View <ArrowRight size={12}/></Link>])} empty={<EmptyState title="No roll matches this lookup" detail="Try a known demo code or clear the filters."/>}/></Card></>;
 }
 

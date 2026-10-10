@@ -56,6 +56,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   const permission = user?.permissions ?? [];
   const primaryRole = user?.roles[0] || "SUPERVISOR";
   const navSections = ROLE_NAVIGATION[primaryRole] || [];
+  console.log("Forcing recompile for StaffShell to clear cache");
   const visibleSections = navSections.map((section) => ({ ...section, items: section.items.filter((item) => !item.any || hasAnyPermission(user, item.any)) })).filter((section) => section.items.length > 0);
   const unreadCount = data.notifications.filter((notice) => notice.unread).length;
   const alertCount = data.machines.filter((machine) => machine.status === "BREAKDOWN").length + data.yarnItems.filter((item) => new Decimal(item.available).lt(item.reorderLevel)).length;
