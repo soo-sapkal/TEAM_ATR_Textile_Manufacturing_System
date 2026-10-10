@@ -79,12 +79,47 @@ function ProductionBoard() {
           (op.shift === shift && currentDate === new Date().toISOString().split('T')[0])
         );
         
+        const machineOperators = DEMO_USERS.filter(u => u.roles.includes("MACHINE_OPERATOR"));
+        const accountedOpIds = new Set<string>();
+
         return (
           <div key={shift} className="col-4">
             <Card title={`Shift ${shift.split(" ")[0]}`} action={<Tag>{assignedOps.length} tasks</Tag>}>
               <div className="stack-sm">
-                {assignedOps.map(op => <ScheduledOperationCard key={op.id} operation={op} onOrderClick={setSelectedOrderCode} />)}
-                {assignedOps.length === 0 && <EmptyState title="Shift unfilled" detail="No tasks scheduled for this shift." />}
+                {machineOperators.map(operator => {
+                  const operatorName = operator.name.split(" (")[0];
+                  const assignedOp = assignedOps.find(op => op.operators.includes(operatorName));
+
+                  if (assignedOp) {
+                    accountedOpIds.add(assignedOp.id);
+                    return (
+                      <div key={operator.id}>
+                        <div style={{ fontSize: 12, fontWeight: 700, paddingBottom: "4px", color: "var(--indigo)", display: "flex", alignItems: "center", gap: 6 }}>
+                          👤 {operatorName}
+                        </div>
+                        <ScheduledOperationCard operation={assignedOp} onOrderClick={setSelectedOrderCode} />
+                      </div>
+                    );
+                  } else {
+                    return (
+                      <div key={operator.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: "8px 12px", background: "var(--color-bg)", borderRadius: 4, border: "1px dashed var(--color-border)" }}>
+                        <span style={{ fontSize: 13, color: "var(--color-secondary)" }}>👤</span>
+                        <span style={{ fontWeight: 600, fontSize: 13, flex: 1, color: "var(--color-secondary)" }}>{operatorName}</span>
+                        <Tag>Idle</Tag>
+                      </div>
+                    );
+                  }
+                })}
+
+                {/* Leftover operations that were assigned without a recognized operator */}
+                {assignedOps.filter(op => !accountedOpIds.has(op.id)).map(op => (
+                   <div key={op.id}>
+                      <div style={{ fontSize: 12, fontWeight: 700, paddingBottom: "4px", color: "var(--madder)", display: "flex", alignItems: "center", gap: 6 }}>
+                         ⚠️ Unassigned Operator
+                      </div>
+                      <ScheduledOperationCard operation={op} onOrderClick={setSelectedOrderCode} />
+                   </div>
+                ))}
               </div>
             </Card>
           </div>
