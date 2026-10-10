@@ -161,3 +161,13 @@ The Dispatch Officer needs a streamlined experience without duplicate pages, plu
      - **Step 2 (Vehicle Details):** A form asking for transport details.
        - *DB Analysis Note:* The current `Shipment` table only has a generic `vehicle` string. We need to add `driverName`, `licensePlate`, `transportAgency`, and `ewayBillNumber` to the Supabase schema.
      - **Step 3 (Invoice Generation):** Generates a final printable invoice / gate pass for the vehicle containing all order, item, and transport details.
+
+# Task 9 - Uday: Dispatch Deadline Tracking
+
+**Context & Requirements:**
+In addition to the fulfillment workflow, the Dispatch Officer needs to proactively manage upcoming deadlines to avoid late deliveries.
+
+1. **Urgent Deadlines Widget:**
+   - Add a widget/KPI card on the Dispatch Dashboard highlighting orders with approaching delivery deadlines (e.g., "Due in next 48 hours").
+2. **Prioritization Flags:**
+   - On the Pending Orders list, prominently flag and sort orders that have nearby deadlines so the logistics team can prioritize loading them first.
