@@ -53,3 +53,46 @@ Redesign the `/rolls` page from scratch into a **Final Goods Inventory** dashboa
 
 5. **Design System:**
    - Follow the **Neobrutalist** aesthetic used across this branch (e.g., thick black borders, stark contrasting colors, sharp drop shadows).
+
+---
+
+# Task 4 - GJ: Dispatch Page Enhancements (Supervisor View)
+
+**Context & Requirements:**
+The supervisor needs better analytical and operational oversight of daily dispatches. Ensure the page provides immediate value upon opening, with tools to dig deeper.
+
+1. **Navbar Visibility:**
+   - Ensure the "Dispatch" page link is correctly displayed and easily accessible in the Supervisor's navigation bar.
+
+2. **Timeframe Analysis (Default to Today):**
+   - The page must default to showing **Today's Data** (shipments scheduled, pending, or completed today).
+   - Add a prominent timeframe selector (e.g., tabs or a dropdown) to analyze other periods: "Yesterday", "This Week", "This Month", and "Custom Range".
+
+3. **Supervisor-Specific Enhancements & KPIs:**
+   - **KPI Cards:** Add top-level metrics showing:
+     - *Fulfillment Rate:* Pending vs. Completed dispatches for the selected timeframe.
+     - *Volume:* Total quantity (meters/yards) and total rolls dispatched.
+     - *Urgent/Delayed:* Count of shipments that have missed their scheduled slot.
+   - **Visual Flags (Neobrutalism):** Use stark, aggressive styling (e.g., thick red borders or loud caution backgrounds) to highlight delayed shipments so they cannot be missed.
+   - **Gate Pass / Manifest Generation:** Add an action button allowing the supervisor to generate or print a consolidated "Daily Dispatch Manifest" for the logistics/gate team.
+
+---
+
+# Task 5 - GJ: Role-Specific Enhancements
+
+**Context & Requirements:**
+Implement the following specific features for each role to support the factory's physical workflow:
+
+1. **Machine Operator additions:**
+   - **Skill-Gating:** In the operator dashboard, add logic so the operator *only* sees tasks that match their assigned skill (e.g., a weaver never sees dyeing tasks).
+   - **Machine Handover / Breakdown:** Add a feature where an operator can report a machine breakdown directly from their task screen, instantly alerting the Supervisor.
+
+2. **Supervisor additions:**
+   - **WIP (Work In Progress) Tracking:** Add a section in inventory to see how much material is currently sitting in the buffer zones (e.g., waiting for weaving, waiting for dyeing).
+   - **Task Dependencies:** When assigning tasks, add a warning if they try to assign a downstream task when there isn't enough upstream material ready (e.g., weaving without enough spun yarn).
+
+3. **Dispatch Officer additions:**
+   - **Partial Dispatching:** Update the dispatch orders page to handle partial deliveries (e.g., if a customer ordered 1000m, but only 500m passed quality today, allow the officer to dispatch the available half).
+
+4. **Quality Inspector additions:**
+   - **Rework Workflow:** Update the quality inspection page so that if a dyed roll fails quality, there is an explicit "Send to Rework" option that routes the material back to the dyeing or weaving queue, rather than just Pass/Fail.
