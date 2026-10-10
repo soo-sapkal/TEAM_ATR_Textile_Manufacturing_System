@@ -25,6 +25,12 @@ export function OwnerDashboardPage() {
   const cashPaidOut = supplierPayments.reduce((sum, p) => sum.plus(p.amountPaid), new Decimal(0));
   const outstandingAP = supplierBills.reduce((sum, bill) => sum.plus(bill.amountDue), new Decimal(0)).minus(cashPaidOut);
 
+  // Financial metrics calculated
+  const totalCosts = supplierBills.reduce((sum, bill) => sum.plus(bill.amountDue), new Decimal(0));
+  const profitMargin = totalRevenue.gt(0) 
+    ? totalRevenue.minus(totalCosts).dividedBy(totalRevenue).times(100) 
+    : new Decimal(0);
+
   // Operations metrics
   const breakdowns = data.machines.filter((machine) => machine.status === "BREAKDOWN");
   const running = data.machines.filter((machine) => machine.status === "RUNNING").length;
