@@ -259,6 +259,11 @@ export interface DemoData {
   payments: Payment[];
   supplierBills: SupplierBill[];
   supplierPayments: SupplierPayment[];
+  roles: Role[];
+  employees: Employee[];
+  attendanceLogs: AttendanceLog[];
+  payrollRuns: PayrollRun[];
+  payslips: Payslip[];
 }
 
 export interface ApiEnvelope<T> {
@@ -306,5 +311,104 @@ export interface SupplierPayment {
   paymentMethod: string;
   referenceNo: string;
   paymentDate: string;
+  createdAt: string;
+}
+
+export interface Role {
+  id: string;
+  name: string;
+  isBaseSalary: boolean;
+  dailyRate: number;
+  hourlyRate: number;
+  createdAt: string;
+}
+
+export interface Employee {
+  id: string;
+  code: string;
+  name: string;
+  roleId: string;
+  createdAt: string;
+}
+
+export interface AttendanceLog {
+  id: string;
+  employeeId: string;
+  date: string;
+  isPresent: boolean;
+  hoursWorked: number;
+  createdAt: string;
+}
+
+export interface PayrollRun {
+  id: string;
+  periodName: string;
+  startDate: string;
+  endDate: string;
+  status: "DRAFT" | "APPROVED" | "PAID";
+  totalGross: number;
+  createdAt: string;
+}
+
+export interface Payslip {
+  id: string;
+  runId: string;
+  employeeId: string;
+  attendanceDays: number;
+  hoursWorked: number;
+  grossPay: number;
+  deductions: number;
+  netPay: number;
+  createdAt: string;
+}
+
+export interface HrRole {
+  id: string;
+  title: string;
+  isBaseSalaryPerDay: boolean;
+  defaultBaseRate: number;
+  defaultHourlyRate: number;
+  createdAt: string;
+}
+
+export interface HrEmployee {
+  id: string;
+  code: string;
+  name: string;
+  roleId: string | null;
+  baseRate: number | null;
+  hourlyRate: number | null;
+  createdAt: string;
+}
+
+export interface HrAttendance {
+  id: string;
+  employeeId: string;
+  date: string;
+  clockIn: string | null;
+  clockOut: string | null;
+  status: "PRESENT" | "ABSENT" | "LEAVE";
+  hoursWorked: number;
+  createdAt: string;
+}
+
+export interface HrPayrollPeriod {
+  id: string;
+  periodCode: string;
+  startDate: string;
+  endDate: string;
+  status: "DRAFT" | "IN_PROGRESS" | "APPROVED";
+  createdAt: string;
+}
+
+export interface HrPayrollSlip {
+  id: string;
+  periodId: string;
+  employeeId: string;
+  attendanceDays: number;
+  hoursWorked: number;
+  grossPay: number;
+  deductions: number;
+  netPay: number;
   createdAt: string;
 }
