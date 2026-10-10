@@ -130,6 +130,25 @@ export function DemoProvider({ children }: { children: ReactNode }) {
         }
       })
       .catch(console.error);
+
+    fetch("/api/production")
+      .then((r) => r.json())
+      .then((res) => {
+        if (res.success && res.data) {
+          setData((prev) => {
+            const next = { 
+              ...prev, 
+              machines: res.data.machines || prev.machines,
+              operations: res.data.operations || prev.operations,
+              outputEvents: res.data.outputEvents || prev.outputEvents,
+              machineEvents: res.data.machineEvents || prev.machineEvents
+            };
+            dataRef.current = next;
+            return next;
+          });
+        }
+      })
+      .catch(console.error);
   }, []);
 
   const toast = useCallback((title: string, detail?: string, tone: ToastMessage["tone"] = "info") => {

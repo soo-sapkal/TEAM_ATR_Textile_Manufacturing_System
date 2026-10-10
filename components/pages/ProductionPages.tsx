@@ -57,7 +57,7 @@ function OperationCard({ operation, onOrderClick }: { operation: Operation; onOr
   const selectedCode = eligibleMachines.some((machine) => machine.code === selectedMachine) ? selectedMachine : eligibleMachines[0]?.code ?? "";
   const alreadyAssigned = selectedCode === operation.machineCode && selectedShift === (operation.shift ?? "") && selectedOperator === (operation.operators[0] ?? "") && data.machines.some((machine) => machine.code === selectedCode && machine.operationId === operation.id);
   const percent = new Decimal(operation.target).gt(0) ? Decimal.min(100, new Decimal(operation.good).div(operation.target).mul(100)).toNumber() : 0;
-  return <article className="stage-card"><div className="stage-card__meta"><span>{operation.code}</span><StatusBadge status={operation.status}/></div><h3>{onOrderClick ? <button style={{ background: "none", border: "none", padding: 0, textDecoration: "underline", cursor: "pointer", color: "inherit", font: "inherit" }} onClick={() => onOrderClick(operation.orderCode)}>{operation.orderCode}</button> : <Link href={`/orders/${encodeURIComponent(operation.orderCode)}`}>{operation.orderCode}</Link>}</h3><div className="stage-card__meta"><span>{operation.machineCode ?? "Unassigned"}</span><span>{operation.shift ?? "Shift not assigned"}</span></div><p className="cell-secondary">{operation.operators.join(" · ") || "Operator not assigned"}</p><Meter value={operation.good} total={operation.target} label="Good output" tone={percent >= 100 ? "neem" : "indigo"}/><div style={{ display: "flex", justifyContent: "space-between", marginTop: 10 }}><span className="cell-secondary">Waste {formatQty(operation.waste, operation.unit, 1)} · Reject {formatQty(operation.reject, operation.unit, 1)}</span><Link className="btn btn--secondary btn--sm" href={`/production/operations/${operation.id}`}>Open console <ArrowRight size={12}/></Link></div>{canAssign && <div className="operation-assignment" style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 16 }}><Field label="Assign machine"><SelectInput value={selectedCode} onChange={(event) => setSelectedMachine(event.target.value)} disabled={!eligibleMachines.length || assigning}><option value="">No eligible machine</option>{eligibleMachines.map((machine) => <option key={machine.id} value={machine.code}>{machine.code} · {machine.name}</option>)}</SelectInput></Field><Field label="Assign shift"><SelectInput value={selectedShift} onChange={(event) => setSelectedShift(event.target.value)} disabled={assigning}><option value="">Select shift</option><option value="A · 06:00–14:00">A · 06:00–14:00</option><option value="B · 14:00–22:00">B · 14:00–22:00</option><option value="C · 22:00–06:00">C · 22:00–06:00</option></SelectInput></Field><Field label="Assign operator"><SelectInput value={selectedOperator} onChange={(event) => setSelectedOperator(event.target.value)} disabled={assigning}><option value="">Select operator</option>{DEMO_USERS.filter(u => u.roles.includes("MACHINE_OPERATOR")).map(u => <option key={u.id} value={u.name.split(" (")[0]}>{u.name}</option>)}</SelectInput></Field><Button size="sm" disabled={!selectedCode || !selectedShift || !selectedOperator || assigning || alreadyAssigned} onClick={async () => { setAssigning(true); const outcome = await act("assign-machine", { operationId: operation.id, machineId: selectedCode, shift: selectedShift, operator: selectedOperator, commandKey: `assign-${operation.id}-${commandRevision}` }); setAssigning(false); if (outcome.ok) setCommandRevision((current) => current + 1); }}>{assigning ? "Assigning…" : alreadyAssigned ? "Machine assigned" : "Assign machine"}</Button>{!eligibleMachines.length && <span className="field__hint">No unreserved IDLE {operation.stage.toLowerCase()} machine is currently available.</span>}</div>}{!canAssign && ["PLANNED", "PAUSED"].includes(operation.status) && <span className="field__hint">Machine assignment requires production.assign.</span>}
+  return <article className="stage-card"><div className="stage-card__meta"><span>{operation.code}</span><StatusBadge status={operation.status}/></div><h3>{onOrderClick ? <button style={{ background: "none", border: "none", padding: 0, textDecoration: "underline", cursor: "pointer", color: "inherit", font: "inherit" }} onClick={() => onOrderClick(operation.orderCode)}>{operation.orderCode}</button> : <Link href={`/orders/${encodeURIComponent(operation.orderCode)}`}>{operation.orderCode}</Link>}</h3><div className="stage-card__meta"><span>{operation.machineCode ?? "Unassigned"}</span><span>{operation.shift ?? "Shift not assigned"}</span></div><p className="cell-secondary">{operation.operators.join(" · ") || "Operator not assigned"}</p><Meter value={operation.good} total={operation.target} label="Good output" tone={percent >= 100 ? "neem" : "indigo"}/><div style={{ display: "flex", justifyContent: "space-between", marginTop: 10 }}><span className="cell-secondary">Waste {formatQty(operation.waste, operation.unit, 1)} · Reject {formatQty(operation.reject, operation.unit, 1)}</span><Link className="btn btn--secondary btn--sm" href={`/production/operations/${operation.id}`}>Open console <ArrowRight size={12}/></Link></div>{canAssign && <div className="operation-assignment" style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 16 }}><Field label="Assign machine"><SelectInput value={selectedCode} onChange={(event) => setSelectedMachine(event.target.value)} disabled={!eligibleMachines.length || assigning}><option value="">No eligible machine</option>{eligibleMachines.map((machine) => <option key={machine.id} value={machine.code}>{machine.code} · {machine.name}</option>)}</SelectInput></Field><Field label="Assign shift"><SelectInput value={selectedShift} onChange={(event) => setSelectedShift(event.target.value)} disabled={assigning}><option value="">Select shift</option><option value="A · 06:00–14:00">A · 06:00–14:00</option><option value="B · 14:00–22:00">B · 14:00–22:00</option><option value="C · 22:00–06:00">C · 22:00–06:00</option></SelectInput></Field><Field label="Assign operator"><SelectInput value={selectedOperator} onChange={(event) => setSelectedOperator(event.target.value)} disabled={assigning}><option value="">Select operator</option>{DEMO_USERS.filter(u => u.roles.includes("MACHINE_OPERATOR")).map(u => <option key={u.id} value={u.name.split(" (")[0]}>{u.name}</option>)}</SelectInput></Field><Button size="sm" disabled={!selectedCode || !selectedShift || !selectedOperator || assigning || alreadyAssigned} onClick={async () => { setAssigning(true); try { const res = await fetch("/api/production/assign-machine", { method: "POST", body: JSON.stringify({ operationId: operation.id, machineId: selectedCode, shift: selectedShift, operator: selectedOperator, actor: user?.name }) }); const outcome = await res.json(); if (outcome.success) { toast("Machine assigned", "Operation updated.", "success"); setCommandRevision((current) => current + 1); window.location.reload(); } else { toast("Error", outcome.error, "error"); } } catch (err: any) { toast("Error", err.message, "error"); } finally { setAssigning(false); } }}>{assigning ? "Assigning…" : alreadyAssigned ? "Machine assigned" : "Assign machine"}</Button>{!eligibleMachines.length && <span className="field__hint">No unreserved IDLE {operation.stage.toLowerCase()} machine is currently available.</span>}</div>}{!canAssign && ["PLANNED", "PAUSED"].includes(operation.status) && <span className="field__hint">Machine assignment requires production.assign.</span>}
   {order?.materialShortage && operation.stage !== "SPINNING" && <div className="field__hint" style={{ color: "var(--madder)", fontWeight: "bold", marginTop: 8 }}>⚠️ Warning: Upstream material shortage. Assigning this task may stall production.</div>}
   </article>;
 }
@@ -130,9 +130,25 @@ function OperationConsole({ id }: { id: string }) {
     if (!canOperate) { toast("Operation action is read-only", "This transition requires machines.operate.", "error"); return; }
     if (["pause", "cancel"].includes(action) && reason.trim().length < 5) { toast("Reason required", "Pause or cancel requires at least five characters.", "error"); return; }
     setBusy(true);
-    const outcome = await act("operation-transition", { operationId, action, reason, commandKey: `operation-${operationId}-${transitionRevision}` });
-    setBusy(false);
-    if (outcome.ok) { setTransitionRevision((current) => current + 1); setReason(""); }
+    try {
+      const res = await fetch("/api/production/operation-transition", {
+        method: "POST",
+        body: JSON.stringify({ operationId, action, reason, actor: user?.name })
+      });
+      const outcome = await res.json();
+      if (outcome.success) { 
+        setTransitionRevision((current) => current + 1); 
+        setReason(""); 
+        toast("State Updated", `Operation transitioned to ${outcome.status}.`, "success");
+        window.location.reload();
+      } else {
+        toast("Error", outcome.error, "error");
+      }
+    } catch (err: any) {
+      toast("Error", err.message, "error");
+    } finally {
+      setBusy(false);
+    }
   }
   async function record(event: FormEvent) {
     event.preventDefault();
@@ -140,9 +156,25 @@ function OperationConsole({ id }: { id: string }) {
     if (!canRecordOutput) { toast("Output is read-only", "Recording output requires production.record_output.", "error"); return; }
     if (!parsed.success) { toast("Output needs correction", parsed.error.issues[0]?.message ?? "Check the quantities.", "error"); return; }
     setBusy(true);
-    const outcome = await act("record-output", { operationId, good, waste, reject, rollQty, commandKey: `output-${operationId}-${outputRevision}` });
-    setBusy(false);
-    if (outcome.ok) { setOutputRevision((current) => current + 1); setGood("0.000"); setWaste("0.000"); setReject("0.000"); setRollQty("0.000"); }
+    try {
+      const res = await fetch("/api/production/record-output", {
+        method: "POST",
+        body: JSON.stringify({ operationId, good, waste, reject, rollQty, actor: user?.name })
+      });
+      const outcome = await res.json();
+      if (outcome.success) { 
+        setOutputRevision((current) => current + 1); 
+        setGood("0.000"); setWaste("0.000"); setReject("0.000"); setRollQty("0.000"); 
+        toast("Output Recorded", "Output events have been saved.", "success");
+        window.location.reload();
+      } else {
+        toast("Error", outcome.error, "error");
+      }
+    } catch (err: any) {
+      toast("Error", err.message, "error");
+    } finally {
+      setBusy(false);
+    }
   }
   return <>
     <PageHeader eyebrow="Floor operation console" title={operation.code} description={`${operation.orderCode} · ${operation.stage.toLowerCase()} · ${operation.machineCode ?? "Machine not assigned"}`} actions={<LinkButton href="/production" variant="secondary"><ArrowLeft size={14}/> Production board</LinkButton>} meta={<><StatusBadge status={state}/><Tag>{operation.shift ?? "NO SHIFT"}</Tag><Tag>FLOOR VIEW · NO COSTS</Tag></>} />

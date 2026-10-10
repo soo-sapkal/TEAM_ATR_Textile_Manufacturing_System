@@ -59,20 +59,46 @@ function MachineDetail({ id }: { id: string }) {
 
   async function transition(status: Machine["status"]) {
     setBusy(true);
-    const response = await act("machine-status", { machineId, status, reason, commandKey: `machine-${machineId}-${transitionRevision}` });
-    setBusy(false);
-    if (response.ok) { setTransitionRevision((current) => current + 1); setReason(""); }
+    try {
+      const res = await fetch("/api/production/machine-status", {
+        method: "POST",
+        body: JSON.stringify({ machineId, status, reason, actor: user?.name })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTransitionRevision((current) => current + 1); setReason("");
+        window.location.reload();
+      } else {
+        toast("Error", data.error, "error");
+      }
+    } catch (err: any) {
+      toast("Error", err.message, "error");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function submitDowntime(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
-    const response = await act("record-downtime", { machineId, category, durationMinutes, reason: downtimeReason, commandKey: `downtime-${machineId}-${downtimeRevision}` });
-    setBusy(false);
-    if (response.ok) {
-      setDowntimeRevision((current) => current + 1);
-      setShowDowntime(false);
-      setDowntimeReason("");
+    try {
+      const res = await fetch("/api/production/record-downtime", {
+        method: "POST",
+        body: JSON.stringify({ machineId, category, durationMinutes, reason: downtimeReason, actor: user?.name })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setDowntimeRevision((current) => current + 1);
+        setShowDowntime(false);
+        setDowntimeReason("");
+        window.location.reload();
+      } else {
+        toast("Error", data.error, "error");
+      }
+    } catch (err: any) {
+      toast("Error", err.message, "error");
+    } finally {
+      setBusy(false);
     }
   }
 
