@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 44 44" role="img" aria-labelledby="title desc">
+  <title id="title">Loom Ledger thread mark</title>
+  <desc id="desc">A cotton-white thread passes through four indigo loom teeth.</desc>
+  <rect width="44" height="44" fill="#f5f1e5"/>
+  <path d="M7 8v9h10v10h10v9h10" fill="none" stroke="#273f80" stroke-width="4" stroke-linejoin="miter"/>
+  <path d="M7 8h7M17 17h7M27 27h7M37 36v-8" fill="none" stroke="#273f80" stroke-width="2"/>
+  <rect x="3" y="4" width="8" height="8" fill="#273f80"/>
+  <rect x="13" y="13" width="8" height="8" fill="#273f80"/>
+  <rect x="23" y="23" width="8" height="8" fill="#273f80"/>
+  <rect x="33" y="33" width="8" height="8" fill="#273f80"/>
+</svg>
