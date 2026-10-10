@@ -37,37 +37,108 @@ export function OrdersPage() {
 }
 
 export function NewOrderPage() {
-  const { data, toast } = useDemo();
+  const { data, toast, user } = useDemo();
   const [buyer, setBuyer] = useState("Mysore House Textiles");
-  const [product, setProduct] = useState("FAB-221 Indigo Twill");
-  const [colour, setColour] = useState("Indigo 7");
+  const [products, setProducts] = useState<any[]>([]);
+  const [productId, setProductId] = useState("");
+  const [productName, setProductName] = useState("");
+  const [bom, setBom] = useState<any[]>([]);
+  const [colour, setColour] = useState("");
   const [quantity, setQuantity] = useState("500.000");
   const [unit, setUnit] = useState<"M" | "KG">("M");
   const [due, setDue] = useState("2026-10-26");
   const [priority, setPriority] = useState("NORMAL");
   const [terms, setTerms] = useState("");
   const [submitted, setSubmitted] = useState(false);
-  const { user } = useDemo();
-  const availableByUnit = [...new Set(data.yarnItems.map((item) => item.unit))].map((itemUnit) => ({ unit: itemUnit, qty: data.yarnItems.filter((item) => item.unit === itemUnit).reduce((sum, item) => sum.plus(item.available), new Decimal(0)) }));
+
+  // Fetch product catalog on mount
+  useEffect(() => {
+    fetch("/api/products")
+      .then((res) => res.json())
+      .then((resData) => {
+        if (resData.success && resData.data.length > 0) {
+          setProducts(resData.data);
+          setProductId(resData.data[0].id);
+          setProductName(resData.data[0].name);
+        }
+      });
+  }, []);
+
+  // Fetch BOM when product changes
+  useEffect(() => {
+    if (!productId) return;
+    const selected = products.find(p => p.id === productId);
+    if (selected) setProductName(selected.name);
+    
+    fetch(`/api/products/${productId}/bom`)
+      .then((res) => res.json())
+      .then((resData) => {
+        if (resData.success) setBom(resData.data);
+      });
+  }, [productId, products]);
+
+  // Calculate material readiness
+  const orderQty = new Decimal(quantity || 0);
+  let hasShortage = false;
+  const materialChecks = bom.map(b => {
+    const requiredTotal = new Decimal(b.quantity_required).times(orderQty);
+    const yarn = data.yarnItems.find(y => y.id === b.yarn_item_id);
+    const available = new Decimal(yarn?.available || 0);
+    const isShort = available.lt(requiredTotal);
+    if (isShort) hasShortage = true;
+    return { ...b, requiredTotal, available, isShort };
+  });
+
   function submit(event: FormEvent) {
     event.preventDefault();
-    const parsed = orderDraftSchema.safeParse({ buyer, product, colour, quantity, unit, due, priority, terms });
+    const parsed = orderDraftSchema.safeParse({ buyer, product: productName, colour, quantity, unit, due, priority, terms });
     if (!parsed.success) { toast("Order draft needs correction", parsed.error.issues[0]?.message ?? "Review the order fields.", "error"); return; }
+    if (hasShortage) { toast("Material Shortage", "Cannot create order with missing yarn dependencies.", "error"); return; }
     setSubmitted(true);
     toast("Order draft staged in this demo", "A live backend must issue the human-readable order code and validate approval state.", "warning");
   }
+  
   return <>
     <PageHeader eyebrow="Customer commitment" title="Create an order" description="Capture the buyer's request first. Approval, material reservation, and production planning remain separate steps." actions={<LinkButton href="/orders" variant="secondary"><ArrowLeft size={14}/> Order book</LinkButton>} />
     <div className="two-pane"><form onSubmit={submit} className="card stack"><div className="card__head"><h2>Order terms</h2><StatusBadge status="DRAFT"/></div>
-      <div className="form-grid"><Field label="Buyer"><SelectInput value={buyer} onChange={(event) => setBuyer(event.target.value)}><option>Mysore House Textiles</option><option>Kaveri Apparel Co.</option><option>Saffron Living</option></SelectInput></Field><Field label="Requested due date"><TextInput type="date" value={due} onChange={(event) => setDue(event.target.value)} required/></Field>
-        <Field label="Product / style"><SelectInput value={product} onChange={(event) => setProduct(event.target.value)}><option>FAB-221 Indigo Twill</option><option>FAB-118 Cotton Sateen</option><option>FAB-307 Linen Blend</option></SelectInput></Field><Field label="Colour / shade"><TextInput value={colour} onChange={(event) => setColour(event.target.value)} required/></Field>
+      <div className="form-grid">
+        <Field label="Buyer"><SelectInput value={buyer} onChange={(event) => setBuyer(event.target.value)}><option>Mysore House Textiles</option><option>Kaveri Apparel Co.</option><option>Saffron Living</option></SelectInput></Field><Field label="Requested due date"><TextInput type="date" value={due} onChange={(event) => setDue(event.target.value)} required/></Field>
+        
+        <Field label="Product / style (from Catalog)">
+          <SelectInput value={productId} onChange={(event) => setProductId(event.target.value)} required>
+            {products.length === 0 && <option value="">Loading products...</option>}
+            {products.map(p => <option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}
+          </SelectInput>
+        </Field>
+        <Field label="Colour / shade"><TextInput value={colour} onChange={(event) => setColour(event.target.value)} required/></Field>
+        
         <Field label="Order quantity"><TextInput inputMode="decimal" pattern="\d+(\.\d{1,3})?" value={quantity} onChange={(event) => setQuantity(event.target.value)} required/><span className="field__hint">Exact decimal string; no conversion from weight to length.</span></Field><Field label="Unit"><SelectInput value={unit} onChange={(event) => setUnit(event.target.value as "M" | "KG")}><option value="M">M — metres</option><option value="KG">KG — kilograms</option></SelectInput></Field>
         <Field label="Priority"><SelectInput value={priority} onChange={(event) => setPriority(event.target.value)}><option value="NORMAL">Normal</option><option value="HIGH">High</option><option value="URGENT">Urgent</option><option value="LOW">Low</option></SelectInput></Field><Field label="Buyer reference"><TextInput placeholder="Optional purchase order number"/></Field>
         <Field label="Terms / notes" className="" hint="This note is internal in the prototype; a buyer-visible note needs an explicit API field."><TextArea value={terms} onChange={(event) => setTerms(event.target.value)} placeholder="Finish, packaging, or delivery notes…"/></Field></div>
-      <div className="form-actions"><span className="field__hint">Created by {user?.name} · approval not implied</span><Button type="submit"><Plus size={14}/> Save draft (demo)</Button></div>
+      <div className="form-actions"><span className="field__hint">Created by {user?.name} · approval not implied</span><Button type="submit" disabled={hasShortage}><Plus size={14}/> Save draft (demo)</Button></div>
       {submitted && <InfoStrip tone="warning" title="Draft is only in this preview session.">No order was written to a database or sent for approval.</InfoStrip>}
     </form>
-    <aside className="stack sticky-summary"><Card title="Material check · indicative only"><div className="stack-sm"><div><Kicker>Available yarn · grouped by unit</Kicker>{availableByUnit.map(({ unit: itemUnit, qty }) => <div className="num" key={itemUnit} style={{ fontSize: 21, fontWeight: 900, marginTop: 7 }}>{formatQty(qty.toFixed(3), itemUnit, 1)}</div>)}<span className="cell-secondary">Order unit: {unit}. No yarn-to-fabric conversion is implied.</span></div><InfoStrip tone="warning">Material recipe, shade, losses, and stage yield need a product BOM. This screen does not treat total yarn as a confirmed reservation.</InfoStrip><div className="permission-note"><strong>Approval trail</strong><p className="cell-secondary">Order creator is {user?.name}. A separate authorized approver will approve or reject; self-approval must be rejected by the backend.</p></div><div className="permission-note"><strong>Live system boundary</strong><p className="cell-secondary">Order numbers, due-date risk, and unit-specific material check depend on the unprovided part1/part2 source and real server.</p></div></div></Card></aside></div>
+    <aside className="stack sticky-summary">
+      <Card title="Live Material Check (BOM)">
+        <div className="stack-sm">
+          {bom.length === 0 ? <EmptyState title="No BOM defined" detail="This product has no yarn recipe attached to it." /> : materialChecks.map((item) => (
+            <div className="permission-note" key={item.yarn_item_id}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                <strong className="code">{item.yarn_code}</strong>
+                <StatusBadge status={!item.isShort ? "AVAILABLE" : "QUARANTINED"} label={!item.isShort ? "Available" : "Shortage"}/>
+              </div>
+              <span className="cell-secondary">{item.yarn_name}</span>
+              <span className="num" style={{ color: item.isShort ? "var(--madder)" : "inherit" }}>
+                {formatQty(item.requiredTotal.toFixed(3), item.unit, 1)} req / {formatQty(item.available.toFixed(3), item.unit, 1)} avail
+              </span>
+            </div>
+          ))}
+          {hasShortage && <InfoStrip tone="danger" title="Material Shortage">Order cannot be placed because the required yarn based on the product BOM is not available in inventory.</InfoStrip>}
+          {!hasShortage && bom.length > 0 && <InfoStrip tone="success" title="All materials available">Yarn inventory is sufficient to fulfill this order's BOM requirements.</InfoStrip>}
+        </div>
+      </Card>
+      <div className="permission-note"><strong>Live system boundary</strong><p className="cell-secondary">Order numbers and unit-specific material check now dynamically fetch from Supabase product definitions.</p></div>
+    </aside></div>
   </>;
 }
 

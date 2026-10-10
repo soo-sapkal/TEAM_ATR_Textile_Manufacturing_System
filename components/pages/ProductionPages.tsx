@@ -101,6 +101,31 @@ function OperationConsole({ id }: { id: string }) {
   const state = operation.status;
   const canOperate = hasPermission(user, "machines.operate");
   const canRecordOutput = hasPermission(user, "production.record_output");
+  const [bom, setBom] = useState<any[]>([]);
+  const [loadingBom, setLoadingBom] = useState(true);
+
+  useEffect(() => {
+    if (!operation) return;
+    const relatedOrder = data.orders.find(o => o.code === operation.orderCode);
+    if (!relatedOrder) { setLoadingBom(false); return; }
+    
+    fetch("/api/products")
+      .then(r => r.json())
+      .then(resData => {
+        if (!resData.success) { setLoadingBom(false); return; }
+        const matchedProduct = resData.data.find((p: any) => p.name === relatedOrder.product);
+        if (!matchedProduct) { setLoadingBom(false); return; }
+        
+        fetch(`/api/products/${matchedProduct.id}/bom`)
+          .then(r => r.json())
+          .then(bomData => {
+             if (bomData.success) setBom(bomData.data);
+             setLoadingBom(false);
+          });
+      })
+      .catch(() => setLoadingBom(false));
+  }, [operation, data.orders]);
+
   async function transition(action: string) {
     if (!canOperate) { toast("Operation action is read-only", "This transition requires machines.operate.", "error"); return; }
     if (["pause", "cancel"].includes(action) && reason.trim().length < 5) { toast("Reason required", "Pause or cancel requires at least five characters.", "error"); return; }
@@ -126,7 +151,28 @@ function OperationConsole({ id }: { id: string }) {
       <Card title="1 · Confirm workstation"><div className="page-grid"><div className="col-6"><Kicker>Machine</Kicker><strong style={{ display: "block", font: "900 24px var(--font-mono)", marginTop: 6 }}>{machine?.code ?? "Unassigned"}</strong><span className="cell-secondary">{machine?.name ?? "Assign a stage-eligible machine before starting"}</span></div><div className="col-6"><Kicker>Machine state</Kicker><div style={{ marginTop: 8 }}><StatusBadge status={machine?.status ?? "OFFLINE"}/></div><span className="cell-secondary">{machine?.location ?? "No location"}</span></div><div className="col-6"><Kicker>Shift</Kicker><strong className="cell-primary">{operation.shift ?? "No assigned shift"}</strong></div><div className="col-6"><Kicker>Operator(s)</Kicker><strong className="cell-primary">{operation.operators.join(" · ") || "No assigned operator"}</strong></div></div>{machine?.status === "BREAKDOWN" && <InfoStrip tone="danger">Machine is down. Do not start this operation until a separate maintenance close-out clears the machine.</InfoStrip>}</Card>
       <Card title="2 · Record output" className="card--floor"><form onSubmit={record} className="stack"><div className="form-grid form-grid--3"><Field label={`Good · ${operation.unit}`}><TextInput className="floor-input" inputMode="decimal" pattern="\d+(\.\d{1,3})?" value={good} onChange={(event) => setGood(event.target.value)} disabled={state !== "IN_PROGRESS" || !canRecordOutput} required/></Field><Field label={`Waste · ${operation.unit}`}><TextInput className="floor-input" inputMode="decimal" value={waste} onChange={(event) => setWaste(event.target.value)} disabled={state !== "IN_PROGRESS" || !canRecordOutput} required/></Field><Field label={`Reject · ${operation.unit}`}><TextInput className="floor-input" inputMode="decimal" value={reject} onChange={(event) => setReject(event.target.value)} disabled={state !== "IN_PROGRESS" || !canRecordOutput} required/></Field></div><div className="info-strip"><Activity size={17}/><div><strong>Exact shift check</strong><div>Combined entry {formatQty(nextQty.toFixed(3), operation.unit, 1)} · remaining target {formatQty(Decimal.max(0, plannedRoom).toFixed(3), operation.unit, 1)}</div></div></div>{finalStage && <Field label="Final-stage roll total · M" hint="Must exactly equal this entry's good-output quantity before final-stage completion."><TextInput className="floor-input" inputMode="decimal" value={rollQty} onChange={(event) => setRollQty(event.target.value)} disabled={state !== "IN_PROGRESS" || !canRecordOutput} required/><span className="field__hint">{rollMatches ? "Roll quantity reconciles." : "Roll total must equal good output exactly."}</span></Field>}<div className="form-actions"><span className="field__hint">Good, waste, reject and roll lineage create append-only events.</span><Button type="submit" size="lg" disabled={busy || state !== "IN_PROGRESS" || !rollMatches}><Check size={17}/>{busy ? "Recording…" : "Record output"}</Button></div></form></Card>
       <Card title="3 · State actions"><div className="stack-sm">{!canOperate && <InfoStrip tone="warning">State changes require machines.operate. This profile can inspect but cannot start, pause, complete, or cancel this operation.</InfoStrip>}<div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{state === "PLANNED" && <Button size="lg" disabled={!canOperate || busy || !machine || machine.status !== "IDLE"} onClick={() => transition("start")}><Play size={17}/> Start</Button>}{state === "IN_PROGRESS" && <><Button size="lg" variant="secondary" disabled={!canOperate || busy} onClick={() => transition("pause")}><Pause size={17}/> Pause</Button><Button size="lg" variant="primary" disabled={!canOperate || busy || (finalStage && !rollMatches)} onClick={() => transition("complete")}><Check size={17}/> Complete</Button></>}{state === "PAUSED" && <Button size="lg" disabled={!canOperate || busy} onClick={() => transition("resume")}><Play size={17}/> Resume</Button>}{["PLANNED", "IN_PROGRESS", "PAUSED"].includes(state) && <Button size="lg" variant="danger" disabled={!canOperate || busy} onClick={() => transition("cancel")}>Cancel operation</Button>}</div>{canOperate && ["IN_PROGRESS", "PAUSED", "PLANNED"].includes(state) && <Field label="Reason for pause / cancellation / downtime" hint="Required for pause and cancellation; preserve append-only reason. Use at least five characters."><TextArea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="What happened? Include the stop time and issue…"/></Field>}<span className="field__hint">Completed operations have no edit or delete controls. A correction is a new, linked event.</span></div></Card>
-    </div><aside className="stack sticky-summary"><Card title="Operation thread"><div className="stack-sm"><div className="permission-note"><strong>{operation.planCode}</strong><span className="cell-secondary">Plan linked to order {operation.orderCode}</span></div><div className="permission-note"><strong>Stage · {operation.stage}</strong><span className="cell-secondary">Input unit and output unit: {operation.unit}. Cross-unit arithmetic is prohibited.</span></div><div className="permission-note"><strong>Target · {formatQty(operation.target, operation.unit, 1)}</strong><span className="cell-secondary">Recorded outputs: good + waste + reject.</span></div><InfoStrip tone="warning">Final-stage rolls need one traceable identity each; their exact total must reconcile to good output. No UUID or roll code is minted in this demo.</InfoStrip><LinkButton href={`/machines/${machine?.id ?? ""}`} variant="secondary"><Factory size={15}/> Machine detail</LinkButton></div></Card><Card title="Append-only output history"><DataTable headers={["Event", "Kind", "Quantity", "Time", "Actor"]} rows={data.outputEvents.filter((event) => event.operationId === operationId).map((event) => [event.code, event.kind, formatQty(event.quantity,event.unit,1), formatDateTime(event.recordedAt), event.actor])} empty={<EmptyState title="No output events" detail="Session-only output records appear here after a valid command."/>}/></Card><div className="permission-note">User {user?.name} · role permissions checked by permission key, not role name.</div></aside></div>
+    </div><aside className="stack sticky-summary"><Card title="Operation thread"><div className="stack-sm"><div className="permission-note"><strong>{operation.planCode}</strong><span className="cell-secondary">Plan linked to order {operation.orderCode}</span></div><div className="permission-note"><strong>Stage · {operation.stage}</strong><span className="cell-secondary">Input unit and output unit: {operation.unit}. Cross-unit arithmetic is prohibited.</span></div><div className="permission-note"><strong>Target · {formatQty(operation.target, operation.unit, 1)}</strong><span className="cell-secondary">Recorded outputs: good + waste + reject.</span></div><InfoStrip tone="warning">Final-stage rolls need one traceable identity each; their exact total must reconcile to good output. No UUID or roll code is minted in this demo.</InfoStrip><LinkButton href={`/machines/${machine?.id ?? ""}`} variant="secondary"><Factory size={15}/> Machine detail</LinkButton></div></Card>
+    
+    <Card title="Required Yarn Recipe (BOM)">
+      {loadingBom ? <div style={{ padding: 12 }}>Loading recipe...</div> : bom.length === 0 ? <EmptyState title="No recipe" detail="No dynamic BOM found for this product." /> : 
+        <div className="stack-sm">
+          {bom.map(b => (
+            <div className="permission-note" key={b.yarn_item_id}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <strong className="code">{b.yarn_code}</strong>
+              </div>
+              <span className="cell-secondary">{b.yarn_name}</span>
+              <div className="num" style={{ marginTop: 4 }}>
+                {formatQty(b.quantity_required, b.unit, 3)} per unit
+              </div>
+            </div>
+          ))}
+          <InfoStrip tone="info">Check recipe details against machine inputs before starting the operation.</InfoStrip>
+        </div>
+      }
+    </Card>
+
+    <Card title="Append-only output history"><DataTable headers={["Event", "Kind", "Quantity", "Time", "Actor"]} rows={data.outputEvents.filter((event) => event.operationId === operationId).map((event) => [event.code, event.kind, formatQty(event.quantity,event.unit,1), formatDateTime(event.recordedAt), event.actor])} empty={<EmptyState title="No output events" detail="Session-only output records appear here after a valid command."/>}/></Card><div className="permission-note">User {user?.name} · role permissions checked by permission key, not role name.</div></aside></div>
   </>;
 }
 
