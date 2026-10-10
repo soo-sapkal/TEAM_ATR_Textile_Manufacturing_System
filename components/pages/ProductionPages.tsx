@@ -22,45 +22,122 @@ export function ProductionRoute({ path, id }: { path: string; id?: string }) {
   return <ProductionBoard/>;
 }
 
+const PRIORITY_RANK = { "URGENT": 1, "HIGH": 2, "NORMAL": 3, "LOW": 4 };
+
 function ProductionBoard() {
   const { data } = useDemo();
+  const [currentDate, setCurrentDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedOrderCode, setSelectedOrderCode] = useState<string | null>(null);
 
-  const running = data.operations.filter((operation) => operation.status === "IN_PROGRESS").length;
-  const paused = data.operations.filter((operation) => operation.status === "PAUSED").length;
-  const noMachine = data.operations.filter((operation) => operation.status === "PLANNED" && !operation.machineCode).length;
+  const shifts = ["A · 06:00–14:00", "B · 14:00–22:00", "C · 22:00–06:00"];
 
-  const activeOrders = data.orders.filter(order => 
-    ["PLANNED", "IN_PROGRESS", "PAUSED", "AWAITING_PRODUCTION"].includes(order.status) &&
-    data.operations.some(op => op.orderCode === order.code)
-  );
+  // Sort unassigned operations by priority and due date
+  const unassignedOps = data.operations
+    .filter(op => ["PLANNED", "PAUSED"].includes(op.status) && !op.machineCode)
+    .sort((a, b) => {
+      const orderA = data.orders.find(o => o.code === a.orderCode);
+      const orderB = data.orders.find(o => o.code === b.orderCode);
+      if (!orderA || !orderB) return 0;
+      
+      const rankA = PRIORITY_RANK[orderA.priority] ?? 5;
+      const rankB = PRIORITY_RANK[orderB.priority] ?? 5;
+      
+      if (rankA !== rankB) return rankA - rankB;
+      return new Date(orderA.due).getTime() - new Date(orderB.due).getTime();
+    });
 
   return <>
     {selectedOrderCode && <OrderModal orderCode={selectedOrderCode} onClose={() => setSelectedOrderCode(null)} />}
-    <PageHeader eyebrow="Make & move · shop floor" title="Daily Assignment Board" description="Assign work to machine operators for each day and shift according to pending orders." actions={<><LinkButton href="/production/shift-summary" variant="secondary"><FileClock size={14}/> Shift summary</LinkButton><LinkButton href="/orders" variant="primary">Order plans <ArrowRight size={14}/></LinkButton></>} meta={<><Tag>12 MACHINES</Tag><Tag>{running} RUNNING OPS</Tag></>} />
+    <PageHeader 
+      eyebrow="Make & move · shop floor" 
+      title="Shift Schedule" 
+      description="View shiftwise assignments for any date, and assign unfulfilled order tasks." 
+      actions={<><LinkButton href="/production/shift-summary" variant="secondary"><FileClock size={14}/> Shift summary</LinkButton><LinkButton href="/orders" variant="primary">Order plans <ArrowRight size={14}/></LinkButton></>} 
+    />
     
-    <div className="stat-grid" style={{ marginBottom: 24 }}><div className="stat-card stat-card--indigo"><div className="stat-card__top">Operations in motion</div><strong>{running}</strong><div className="stat-card__bottom">machine + active shift assigned</div></div><div className="stat-card stat-card--turmeric"><div className="stat-card__top">Paused / blocked</div><strong>{paused + data.machines.filter((machine) => machine.status === "BREAKDOWN").length}</strong><div className="stat-card__bottom">requires a reason or recovery</div></div><div className="stat-card stat-card--cotton"><div className="stat-card__top">Needs machine</div><strong>{noMachine}</strong><div className="stat-card__bottom">stage-eligible assignment required</div></div></div>
+    <div style={{ marginBottom: 24 }}>
+      <Card>
+        <div style={{ padding: "16px", display: "flex", gap: 12, alignItems: "center" }}>
+          <span style={{ fontWeight: 600 }}>Schedule Date:</span>
+          <TextInput type="date" value={currentDate} onChange={e => setCurrentDate(e.target.value)} />
+          <Button variant="secondary" onClick={() => {
+            const d = new Date(currentDate);
+            d.setDate(d.getDate() - 1);
+            setCurrentDate(d.toISOString().split('T')[0]);
+          }}>Yesterday</Button>
+          <Button variant="secondary" onClick={() => setCurrentDate(new Date().toISOString().split('T')[0])}>Today</Button>
+        </div>
+      </Card>
+    </div>
     
-    <div className="stack">
-      {activeOrders.map(order => {
-        const ops = data.operations.filter((operation) => operation.orderCode === order.code && operation.status !== "CANCELLED" && operation.status !== "COMPLETED");
-        if (!ops.length) return null;
+    <div className="page-grid">
+      {shifts.map(shift => {
+        const expectedShiftString = `${currentDate} | ${shift}`;
+        // Support legacy assignment format where date isn't explicitly prepended if it's today
+        const assignedOps = data.operations.filter(op => 
+          op.shift === expectedShiftString || 
+          (op.shift === shift && currentDate === new Date().toISOString().split('T')[0])
+        );
+        
         return (
-          <Card key={order.id} title={`Order ${order.code} · ${order.product} (${order.colour})`} action={<StatusBadge status={order.status}/>}>
-            <div className="page-grid">
-              {ops.map((operation) => (
-                <div key={operation.id} className="col-4">
-                  <OperationCard operation={operation} onOrderClick={(code) => setSelectedOrderCode(code)} />
-                </div>
-              ))}
-            </div>
-          </Card>
+          <div key={shift} className="col-4">
+            <Card title={`Shift ${shift.split(" ")[0]}`} action={<Tag>{assignedOps.length} tasks</Tag>}>
+              <div className="stack-sm">
+                {assignedOps.map(op => <ScheduledOperationCard key={op.id} operation={op} onOrderClick={setSelectedOrderCode} />)}
+                {assignedOps.length === 0 && <EmptyState title="Shift unfilled" detail="No tasks scheduled for this shift." />}
+              </div>
+            </Card>
+          </div>
         );
       })}
-      {activeOrders.length === 0 && <EmptyState title="No active orders" detail="Release a plan to create stage operations."/>}
     </div>
-    <div className="page-grid" style={{ marginTop: 16 }}><Card className="col-6" title="Machine alerts" action={<Link href="/machines" className="btn btn--quiet btn--sm">Machine board <ArrowRight size={12}/></Link>}>{data.machines.filter((machine) => ["BREAKDOWN", "MAINTENANCE"].includes(machine.status)).map((machine) => <div key={machine.id} className="info-strip info-strip--danger"><Wrench size={16}/><div><Link href={`/machines/${machine.id}`}><strong>{machine.code} · {machine.status}</strong></Link><div>{machine.downtimeMinutes} minutes logged · {machine.orderCode ?? "No active order"}</div></div></div>)}</Card><Card className="col-6" title="Planning guardrails"><InfoStrip tone="warning">Material shortage blocks release. Reservations are batch-aware; a machine assignment must match its process stage and shift availability.</InfoStrip><InfoStrip>Operator can start, pause, record output/waste/reject, downtime and completion—but cannot edit or delete an earlier output.</InfoStrip></Card></div>
+
+    <div style={{ marginTop: 32 }}>
+      <Card title="Unassigned Order Tasks" action={<Tag>{unassignedOps.length} pending</Tag>}>
+        <InfoStrip tone="info">Tasks are automatically sorted by Order Priority and Due Date.</InfoStrip>
+        <div className="page-grid" style={{ marginTop: 16 }}>
+          {unassignedOps.map(op => (
+            <div key={op.id} className="col-6">
+              <OperationCard operation={op} onOrderClick={setSelectedOrderCode} />
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
   </>;
+}
+
+function ScheduledOperationCard({ operation, onOrderClick }: { operation: Operation; onOrderClick: (c: string) => void }) {
+  const { data } = useDemo();
+  const order = data.orders.find(o => o.code === operation.orderCode);
+  const percent = new Decimal(operation.target).gt(0) ? Decimal.min(100, new Decimal(operation.good).div(operation.target).mul(100)).toNumber() : 0;
+
+  return (
+    <article className="stage-card" style={{ padding: "12px", background: "var(--color-bg)" }}>
+      <div className="stage-card__meta">
+        <button style={{ background: "none", border: "none", padding: 0, textDecoration: "underline", cursor: "pointer", color: "inherit", fontWeight: 700 }} onClick={() => onOrderClick(operation.orderCode)}>
+          {operation.orderCode}
+        </button>
+        <StatusBadge status={operation.status}/>
+      </div>
+      <div style={{ margin: "8px 0", fontSize: 13, color: "var(--color-secondary)" }}>
+        {order ? `${order.product} · ${order.colour}` : "Unknown Product"}
+      </div>
+      <div className="stage-card__meta" style={{ marginTop: 8 }}>
+        <span style={{ fontWeight: 600 }}>{operation.stage}</span>
+        <span>{operation.machineCode}</span>
+      </div>
+      <div style={{ fontSize: 12, marginTop: 4 }}>
+        <strong>Operator:</strong> {operation.operators.join(" · ") || "None"}
+      </div>
+      <div style={{ marginTop: 12 }}>
+        <Meter value={operation.good} total={operation.target} label="Output" tone={percent >= 100 ? "neem" : "indigo"}/>
+      </div>
+      <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end" }}>
+         <Link className="btn btn--quiet btn--sm" href={`/production/operations/${operation.id}`}>Console <ArrowRight size={12}/></Link>
+      </div>
+    </article>
+  );
 }
 
 function OperationCard({ operation, onOrderClick }: { operation: Operation; onOrderClick?: (code: string) => void }) {
