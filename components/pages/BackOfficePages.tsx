@@ -21,6 +21,7 @@ export function BackOfficeRoute({ path, id }: { path: string; id?: string }) {
   if (path === "/finance/payables") return <PayablesPage/>;
   if (path === "/finance/expenses") return <ExpensesPage/>;
   if (path === "/hr/attendance") return <AttendancePage/>;
+  if (path === "/hr") return <PersonalHRPage/>;
   if (path.startsWith("/hr/payroll/")) return <PayrollPeriodPage id={id ?? ""}/>;
   if (path === "/hr/payroll") return <PayrollPage/>;
   if (path === "/reports/month-close") return <MonthClosePage/>;
@@ -361,3 +362,36 @@ function NotificationsPage() {
   const unread = data.notifications.filter((notice) => notice.unread).length;
   return <><PageHeader eyebrow="Operational events · inbox" title="Notifications" description="Short reminders link back to a durable order, machine, batch, or roll record; notifications are not the source of truth." actions={<Button variant="secondary" onClick={() => act("mark-read", { all: true, commandKey: `mark-all-read:${data.notifications.filter((notice) => notice.unread).map((notice) => notice.id).sort().join(",")}` })}>Mark all read</Button>} meta={<Tag>{unread} UNREAD</Tag>} /><Card title="Notification inbox">{data.notifications.map((notice) => <Link className={`notification-row${notice.unread ? " notification-row--unread" : ""}`} key={notice.id} href={notice.href} onClick={() => void act("mark-read", { id: notice.id, commandKey: `mark-read:${notice.id}` })}><strong>{notice.title}</strong><p>{notice.body}</p><span className="cell-secondary">{notice.when} · {notice.unread ? "Unread" : "Read"}</span></Link>)}</Card></>;
 }
+
+function PersonalHRPage() {
+  const { data, user, toast } = useDemo();
+  return <><PageHeader eyebrow="Personal" title="HR & Leaves" description="View your attendance, leave balances, and request time off." meta={<><Tag>EMPLOYEE: {user?.name}</Tag></>} />
+    <div className="page-grid">
+      <Card className="col-4" title="Leave Balances">
+        <div className="stat-grid">
+          <div className="stat-card stat-card--neem"><div className="stat-card__top">Casual Leave</div><strong>8</strong><div className="stat-card__bottom">days remaining</div></div>
+          <div className="stat-card stat-card--turmeric"><div className="stat-card__top">Sick Leave</div><strong>4</strong><div className="stat-card__bottom">days remaining</div></div>
+          <div className="stat-card stat-card--indigo"><div className="stat-card__top">Earned Leave</div><strong>12</strong><div className="stat-card__bottom">days remaining</div></div>
+        </div>
+      </Card>
+      <Card className="col-8" title="Apply for Leave">
+        <div className="stack">
+          <div className="form-grid form-grid--2">
+            <Field label="Leave Type"><SelectInput><option>Casual Leave</option><option>Sick Leave</option><option>Earned Leave</option></SelectInput></Field>
+            <Field label="Date"><TextInput type="date" /></Field>
+            <Field label="Reason" className="col-span-2"><TextArea placeholder="Reason for leave" /></Field>
+          </div>
+          <Button variant="primary" onClick={() => toast("Leave Applied", "Your leave request has been submitted to the supervisor.", "success")}><CalendarCheck2 size={16}/> Apply for Leave</Button>
+        </div>
+      </Card>
+      <Card className="col-12" title="Salary & Payroll">
+        <DataTable headers={["Period", "Basic Pay", "Overtime", "Deductions", "Net Salary", "Status"]} rows={[
+          ["Sep 2026", "₹18,000.00", "₹1,200.00", "₹500.00", "₹18,700.00", <StatusBadge status="PAID" />],
+          ["Aug 2026", "₹18,000.00", "₹800.00", "₹500.00", "₹18,300.00", <StatusBadge status="PAID" />],
+          ["Jul 2026", "₹18,000.00", "₹1,500.00", "₹500.00", "₹19,000.00", <StatusBadge status="PAID" />]
+        ]} />
+      </Card>
+    </div>
+  </>;
+}
+

@@ -22,55 +22,221 @@ export function ProductionRoute({ path, id }: { path: string; id?: string }) {
   return <ProductionBoard/>;
 }
 
+const PRIORITY_RANK = { "URGENT": 1, "HIGH": 2, "NORMAL": 3, "LOW": 4 };
+
 function ProductionBoard() {
   const { data } = useDemo();
-  const [stageFilter, setStageFilter] = useState("ALL");
-  const [view, setView] = useState<"BOARD" | "LIST">("BOARD");
-  const running = data.operations.filter((operation) => operation.status === "IN_PROGRESS").length;
-  const paused = data.operations.filter((operation) => operation.status === "PAUSED").length;
-  const noMachine = data.operations.filter((operation) => operation.status === "PLANNED" && !operation.machineCode).length;
-  const visibleOperations = data.operations.filter((operation) => stageFilter === "ALL" || stageFilter === operation.stage);
+  const [currentDate, setCurrentDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedOrderCode, setSelectedOrderCode] = useState<string | null>(null);
+
+  const shifts = ["A · 06:00–14:00", "B · 14:00–22:00", "C · 22:00–06:00"];
+
+  // Sort unassigned operations by priority and due date
+  const unassignedOps = data.operations
+    .filter(op => ["PLANNED", "PAUSED"].includes(op.status) && !op.machineCode)
+    .sort((a, b) => {
+      const orderA = data.orders.find(o => o.code === a.orderCode);
+      const orderB = data.orders.find(o => o.code === b.orderCode);
+      if (!orderA || !orderB) return 0;
+      
+      const rankA = PRIORITY_RANK[orderA.priority] ?? 5;
+      const rankB = PRIORITY_RANK[orderB.priority] ?? 5;
+      
+      if (rankA !== rankB) return rankA - rankB;
+      return new Date(orderA.due).getTime() - new Date(orderB.due).getTime();
+    });
+
   return <>
     {selectedOrderCode && <OrderModal orderCode={selectedOrderCode} onClose={() => setSelectedOrderCode(null)} />}
-    <PageHeader eyebrow="Make & move · shop floor" title="Production board" description="Plans progress through spinning, weaving, and dyeing. Operations are tied to a machine, shift, operator, and exact unit." actions={<><LinkButton href="/production/shift-summary" variant="secondary"><FileClock size={14}/> Shift summary</LinkButton><LinkButton href="/orders" variant="primary">Order plans <ArrowRight size={14}/></LinkButton></>} meta={<><Tag>12 MACHINES</Tag><Tag>{running} RUNNING OPS</Tag><Tag>{paused} PAUSED</Tag></>} />
-    <div className="filter-row production-view-tabs" role="group" aria-label="Production view"><button type="button" className={`filter-chip${view === "BOARD" ? " filter-chip--active" : ""}`} aria-pressed={view === "BOARD"} onClick={() => setView("BOARD")}>Board</button><button type="button" className={`filter-chip${view === "LIST" ? " filter-chip--active" : ""}`} aria-pressed={view === "LIST"} onClick={() => setView("LIST")}>List</button><button type="button" className="filter-chip" disabled aria-describedby="production-gantt-help">Gantt · schedule required</button></div>
-    <div className="stat-grid"><div className="stat-card stat-card--indigo"><div className="stat-card__top">Operations in motion</div><strong>{running}</strong><div className="stat-card__bottom">machine + active shift assigned</div></div><div className="stat-card stat-card--turmeric"><div className="stat-card__top">Paused / blocked</div><strong>{paused + data.machines.filter((machine) => machine.status === "BREAKDOWN").length}</strong><div className="stat-card__bottom">requires a reason or recovery</div></div><div className="stat-card stat-card--neem"><div className="stat-card__top">Completed this shift</div><strong>{data.operations.filter((operation) => operation.status === "COMPLETED").length}</strong><div className="stat-card__bottom">from seeded examples</div></div><div className="stat-card stat-card--cotton"><div className="stat-card__top">Needs machine</div><strong>{noMachine}</strong><div className="stat-card__bottom">stage-eligible assignment required</div></div></div>
-    <div className="filter-row" role="group" aria-label="Filter production board">{["ALL", "SPINNING", "WEAVING", "DYEING"].map((filter) => <button key={filter} className={`filter-chip${stageFilter === filter ? " filter-chip--active" : ""}`} onClick={() => setStageFilter(filter)}>{filter.replaceAll("_", " ")}</button>)}<span className="field__hint">A machine must match the operation&apos;s stage; running machines cannot be double-assigned.</span></div>
-    {view === "BOARD" && <div className="page-grid">{stageOrder.filter((stage) => stageFilter === "ALL" || stageFilter === stage).map((stage) => { const ops = data.operations.filter((operation) => operation.stage === stage && operation.status !== "CANCELLED"); const live = ops.filter((operation) => operation.status === "IN_PROGRESS").length; return <Card className="col-4" key={stage} title={stage} action={<Tag>{live} live</Tag>}><div className="stack-sm">{ops.map((operation) => <OperationCard key={operation.id} operation={operation} onOrderClick={(code) => setSelectedOrderCode(code)} />)}</div>{!ops.length && <EmptyState title="No operations in this lane" detail="Release a plan to create stage operations."/>}</Card>; })}</div>}
-    {view === "LIST" && <Card className="card--table" title="Operation list" action={<Tag>{visibleOperations.length} shown</Tag>}><DataTable headers={["Operation", "Order / due", "Stage", "Machine / shift", "Good / target", "State", ""]} rows={visibleOperations.map((operation) => { const order = data.orders.find((candidate) => candidate.code === operation.orderCode); return [<Link className="cell-primary code" href={`/production/operations/${operation.id}`}>{operation.code}</Link>, <div><button className="cell-primary link-button" style={{ background: "none", border: "none", padding: 0, textDecoration: "underline", cursor: "pointer", color: "inherit", font: "inherit" }} onClick={() => setSelectedOrderCode(operation.orderCode)}>{operation.orderCode}</button><span className="cell-secondary">{order ? formatDate(order.due) : "Due date unavailable"}</span></div>, operation.stage, <div>{operation.machineCode ?? "Unassigned"}<span className="cell-secondary">{operation.shift ?? "No shift"}</span></div>, <div><span className="num">{formatQty(operation.good, operation.unit, 1)} / {formatQty(operation.target, operation.unit, 1)}</span><Meter value={operation.good} total={operation.target} label={`${operation.code} progress`} showNumbers={false}/></div>, <StatusBadge status={operation.status}/>, <Link className="btn btn--secondary btn--sm" href={`/production/operations/${operation.id}`}>Console <ArrowRight size={12}/></Link>]; })} empty={<EmptyState title="No operations in this filter" detail="Choose another stage or inspect the board."/>}/></Card>}
-    <p className="field__hint" id="production-gantt-help">Calendar Gantt is unavailable in this demo: the supplied analysis does not define operation start/end timestamps. The view is intentionally not fabricated.</p>
-    <div className="page-grid" style={{ marginTop: 16 }}><Card className="col-6" title="Machine alerts" action={<Link href="/machines" className="btn btn--quiet btn--sm">Machine board <ArrowRight size={12}/></Link>}>{data.machines.filter((machine) => ["BREAKDOWN", "MAINTENANCE"].includes(machine.status)).map((machine) => <div key={machine.id} className="info-strip info-strip--danger"><Wrench size={16}/><div><Link href={`/machines/${machine.id}`}><strong>{machine.code} · {machine.status}</strong></Link><div>{machine.downtimeMinutes} minutes logged · {machine.orderCode ?? "No active order"}</div></div></div>)}</Card><Card className="col-6" title="Planning guardrails"><InfoStrip tone="warning">Material shortage blocks release. Reservations are batch-aware; a machine assignment must match its process stage and shift availability.</InfoStrip><InfoStrip>Operator can start, pause, record output/waste/reject, downtime and completion—but cannot edit or delete an earlier output.</InfoStrip></Card></div>
+    <PageHeader 
+      eyebrow="Make & move · shop floor" 
+      title="Shift Schedule" 
+      description="View shiftwise assignments for any date, and assign unfulfilled order tasks." 
+      actions={<><LinkButton href="/production/shift-summary" variant="secondary"><FileClock size={14}/> Shift summary</LinkButton><LinkButton href="/orders" variant="primary">Order plans <ArrowRight size={14}/></LinkButton></>} 
+    />
+    
+    <div style={{ marginBottom: 24 }}>
+      <Card>
+        <div style={{ padding: "16px", display: "flex", gap: 12, alignItems: "center" }}>
+          <span style={{ fontWeight: 600 }}>Schedule Date:</span>
+          <TextInput type="date" value={currentDate} onChange={e => setCurrentDate(e.target.value)} />
+          <Button variant="secondary" onClick={() => {
+            const d = new Date(currentDate);
+            d.setDate(d.getDate() - 1);
+            setCurrentDate(d.toISOString().split('T')[0]);
+          }}>Yesterday</Button>
+          <Button variant="secondary" onClick={() => setCurrentDate(new Date().toISOString().split('T')[0])}>Today</Button>
+        </div>
+      </Card>
+    </div>
+    
+    <div className="page-grid">
+      {shifts.map(shift => {
+        const expectedShiftString = `${currentDate} | ${shift}`;
+        // Support legacy assignment format where date isn't explicitly prepended if it's today
+        const assignedOps = data.operations.filter(op => 
+          op.shift === expectedShiftString || 
+          (op.shift === shift && currentDate === new Date().toISOString().split('T')[0])
+        );
+        
+        const machineOperators = DEMO_USERS.filter(u => u.roles.includes("MACHINE_OPERATOR"));
+        const accountedOpIds = new Set<string>();
+
+        return (
+          <div key={shift} className="col-4">
+            <Card title={`Shift ${shift.split(" ")[0]}`} action={<Tag>{assignedOps.length} tasks</Tag>}>
+              <div className="stack-sm">
+                {machineOperators.map(operator => {
+                  const operatorName = operator.name.split(" (")[0];
+                  const assignedOp = assignedOps.find(op => op.operators.includes(operatorName));
+
+                  if (assignedOp) {
+                    accountedOpIds.add(assignedOp.id);
+                    return (
+                      <div key={operator.id}>
+                        <div style={{ fontSize: 12, fontWeight: 700, paddingBottom: "4px", color: "var(--indigo)", display: "flex", alignItems: "center", gap: 6 }}>
+                          👤 {operatorName}
+                        </div>
+                        <ScheduledOperationCard operation={assignedOp} onOrderClick={setSelectedOrderCode} />
+                      </div>
+                    );
+                  } else {
+                    return (
+                      <div key={operator.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: "8px 12px", background: "var(--color-bg)", borderRadius: 4, border: "1px dashed var(--color-border)" }}>
+                        <span style={{ fontSize: 13, color: "var(--color-secondary)" }}>👤</span>
+                        <span style={{ fontWeight: 600, fontSize: 13, flex: 1, color: "var(--color-secondary)" }}>{operatorName}</span>
+                        <Tag>Idle</Tag>
+                      </div>
+                    );
+                  }
+                })}
+
+                {/* Leftover operations that were assigned without a recognized operator */}
+                {assignedOps.filter(op => !accountedOpIds.has(op.id)).map(op => (
+                   <div key={op.id}>
+                      <div style={{ fontSize: 12, fontWeight: 700, paddingBottom: "4px", color: "var(--madder)", display: "flex", alignItems: "center", gap: 6 }}>
+                         ⚠️ Unassigned Operator
+                      </div>
+                      <ScheduledOperationCard operation={op} onOrderClick={setSelectedOrderCode} />
+                   </div>
+                ))}
+              </div>
+            </Card>
+          </div>
+        );
+      })}
+    </div>
+
+    <div style={{ marginTop: 32 }}>
+      <Card title="Unassigned Order Tasks" action={<Tag>{unassignedOps.length} pending</Tag>}>
+        <InfoStrip tone="info">Tasks are automatically sorted by Order Priority and Due Date.</InfoStrip>
+        <div className="page-grid" style={{ marginTop: 16 }}>
+          {unassignedOps.map(op => (
+            <div key={op.id} className="col-6">
+              <OperationCard operation={op} onOrderClick={setSelectedOrderCode} />
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
   </>;
+}
+
+function ScheduledOperationCard({ operation, onOrderClick }: { operation: Operation; onOrderClick: (c: string) => void }) {
+  const { data } = useDemo();
+  const order = data.orders.find(o => o.code === operation.orderCode);
+  const percent = new Decimal(operation.target).gt(0) ? Decimal.min(100, new Decimal(operation.good).div(operation.target).mul(100)).toNumber() : 0;
+
+  return (
+    <article className="stage-card" style={{ padding: "12px", background: "var(--color-bg)" }}>
+      <div className="stage-card__meta">
+        <button style={{ background: "none", border: "none", padding: 0, textDecoration: "underline", cursor: "pointer", color: "inherit", fontWeight: 700 }} onClick={() => onOrderClick(operation.orderCode)}>
+          {operation.orderCode}
+        </button>
+        <StatusBadge status={operation.status}/>
+      </div>
+      <div style={{ margin: "8px 0", fontSize: 13, color: "var(--color-secondary)" }}>
+        {order ? `${order.product} · ${order.colour}` : "Unknown Product"}
+      </div>
+      <div className="stage-card__meta" style={{ marginTop: 8 }}>
+        <span style={{ fontWeight: 600 }}>{operation.stage}</span>
+        <span>{operation.machineCode}</span>
+      </div>
+      <div style={{ fontSize: 12, marginTop: 4 }}>
+        <strong>Operator:</strong> {operation.operators.join(" · ") || "None"}
+      </div>
+      <div style={{ marginTop: 12 }}>
+        <Meter value={operation.good} total={operation.target} label="Output" tone={percent >= 100 ? "neem" : "indigo"}/>
+      </div>
+      <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end" }}>
+         <Link className="btn btn--quiet btn--sm" href={`/production/operations/${operation.id}`}>Console <ArrowRight size={12}/></Link>
+      </div>
+    </article>
+  );
 }
 
 function OperationCard({ operation, onOrderClick }: { operation: Operation; onOrderClick?: (code: string) => void }) {
   const { data, user, act, toast } = useDemo();
   const order = data.orders.find((o) => o.code === operation.orderCode);
+  
+  const shiftParts = (operation.shift || "").split(" | ");
+  const initialDate = shiftParts.length > 1 ? shiftParts[0] : new Date().toISOString().split('T')[0];
+  const initialShift = shiftParts.length > 1 ? shiftParts[1] : (operation.shift ?? "");
+
   const [selectedMachine, setSelectedMachine] = useState(operation.machineCode ?? "");
-  const [selectedShift, setSelectedShift] = useState(operation.shift ?? "");
+  const [selectedDate, setSelectedDate] = useState(initialDate);
+  const [selectedShift, setSelectedShift] = useState(initialShift);
   const [selectedOperator, setSelectedOperator] = useState(operation.operators[0] ?? "");
   const [commandRevision, setCommandRevision] = useState(1);
   const [assigning, setAssigning] = useState(false);
+  
   const canAssign = hasPermission(user, "production.assign") && ["PLANNED", "PAUSED"].includes(operation.status);
   const eligibleMachines = data.machines.filter((machine) => machine.stage === operation.stage && machine.status === "IDLE" && (!machine.operationId || machine.operationId === operation.id) && !data.operations.some((other) => other.id !== operation.id && other.machineCode === machine.code && ["PLANNED", "IN_PROGRESS", "PAUSED"].includes(other.status)));
   const selectedCode = eligibleMachines.some((machine) => machine.code === selectedMachine) ? selectedMachine : eligibleMachines[0]?.code ?? "";
-  const alreadyAssigned = selectedCode === operation.machineCode && selectedShift === (operation.shift ?? "") && selectedOperator === (operation.operators[0] ?? "") && data.machines.some((machine) => machine.code === selectedCode && machine.operationId === operation.id);
+  
+  const fullShiftString = `${selectedDate} | ${selectedShift}`;
+  const alreadyAssigned = selectedCode === operation.machineCode && fullShiftString === (operation.shift ?? "") && selectedOperator === (operation.operators[0] ?? "") && data.machines.some((machine) => machine.code === selectedCode && machine.operationId === operation.id);
   const percent = new Decimal(operation.target).gt(0) ? Decimal.min(100, new Decimal(operation.good).div(operation.target).mul(100)).toNumber() : 0;
-  return <article className="stage-card"><div className="stage-card__meta"><span>{operation.code}</span><StatusBadge status={operation.status}/></div><h3>{onOrderClick ? <button style={{ background: "none", border: "none", padding: 0, textDecoration: "underline", cursor: "pointer", color: "inherit", font: "inherit" }} onClick={() => onOrderClick(operation.orderCode)}>{operation.orderCode}</button> : <Link href={`/orders/${encodeURIComponent(operation.orderCode)}`}>{operation.orderCode}</Link>}</h3><div className="stage-card__meta"><span>{operation.machineCode ?? "Unassigned"}</span><span>{operation.shift ?? "Shift not assigned"}</span></div><p className="cell-secondary">{operation.operators.join(" · ") || "Operator not assigned"}</p><Meter value={operation.good} total={operation.target} label="Good output" tone={percent >= 100 ? "neem" : "indigo"}/><div style={{ display: "flex", justifyContent: "space-between", marginTop: 10 }}><span className="cell-secondary">Waste {formatQty(operation.waste, operation.unit, 1)} · Reject {formatQty(operation.reject, operation.unit, 1)}</span><Link className="btn btn--secondary btn--sm" href={`/production/operations/${operation.id}`}>Open console <ArrowRight size={12}/></Link></div>{canAssign && <div className="operation-assignment" style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 16 }}><Field label="Assign machine"><SelectInput value={selectedCode} onChange={(event) => setSelectedMachine(event.target.value)} disabled={!eligibleMachines.length || assigning}><option value="">No eligible machine</option>{eligibleMachines.map((machine) => <option key={machine.id} value={machine.code}>{machine.code} · {machine.name}</option>)}</SelectInput></Field><Field label="Assign shift"><SelectInput value={selectedShift} onChange={(event) => setSelectedShift(event.target.value)} disabled={assigning}><option value="">Select shift</option><option value="A · 06:00–14:00">A · 06:00–14:00</option><option value="B · 14:00–22:00">B · 14:00–22:00</option><option value="C · 22:00–06:00">C · 22:00–06:00</option></SelectInput></Field><Field label="Assign operator"><SelectInput value={selectedOperator} onChange={(event) => setSelectedOperator(event.target.value)} disabled={assigning}><option value="">Select operator</option>{DEMO_USERS.filter(u => u.roles.includes("MACHINE_OPERATOR")).map(u => <option key={u.id} value={u.name.split(" (")[0]}>{u.name}</option>)}</SelectInput></Field><Button size="sm" disabled={!selectedCode || !selectedShift || !selectedOperator || assigning || alreadyAssigned} onClick={async () => { setAssigning(true); try { const res = await fetch("/api/production/assign-machine", { method: "POST", body: JSON.stringify({ operationId: operation.id, machineId: selectedCode, shift: selectedShift, operator: selectedOperator, actor: user?.name }) }); const outcome = await res.json(); if (outcome.success) { toast("Machine assigned", "Operation updated.", "success"); setCommandRevision((current) => current + 1); window.location.reload(); } else { toast("Error", outcome.error, "error"); } } catch (err: any) { toast("Error", err.message, "error"); } finally { setAssigning(false); } }}>{assigning ? "Assigning…" : alreadyAssigned ? "Machine assigned" : "Assign machine"}</Button>{!eligibleMachines.length && <span className="field__hint">No unreserved IDLE {operation.stage.toLowerCase()} machine is currently available.</span>}</div>}{!canAssign && ["PLANNED", "PAUSED"].includes(operation.status) && <span className="field__hint">Machine assignment requires production.assign.</span>}
+  
+  const estimatedHours = new Decimal(operation.target).div(50).toNumber();
+  const isLarge = estimatedHours > 8;
+  const [autoSplit, setAutoSplit] = useState(isLarge);
+
+  return <article className="stage-card"><div className="stage-card__meta"><span>{operation.code}</span><StatusBadge status={operation.status}/></div><h3>{operation.stage}</h3><div className="stage-card__meta"><span>{operation.machineCode ?? "Unassigned"}</span><span>{operation.shift ?? "Shift not assigned"}</span></div><p className="cell-secondary">{operation.operators.join(" · ") || "Operator not assigned"}</p><Meter value={operation.good} total={operation.target} label="Good output" tone={percent >= 100 ? "neem" : "indigo"}/><div style={{ display: "flex", justifyContent: "space-between", marginTop: 10 }}><span className="cell-secondary">Waste {formatQty(operation.waste, operation.unit, 1)} · Reject {formatQty(operation.reject, operation.unit, 1)}</span><Link className="btn btn--secondary btn--sm" href={`/production/operations/${operation.id}`}>Open console <ArrowRight size={12}/></Link></div>{canAssign && <div className="operation-assignment" style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 16 }}>
+    
+    <div style={{ padding: 12, background: "var(--indigo-soft)", borderRadius: 4, display: "flex", flexDirection: "column", gap: 4 }}>
+      <span style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>⏱️ Estimated time: {estimatedHours.toFixed(1)} hours <span style={{ fontWeight: 400, color: "var(--color-secondary)" }}>(@50 {operation.unit}/hr)</span></span>
+      {isLarge && <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13 }}><input type="checkbox" checked={autoSplit} onChange={e => setAutoSplit(e.target.checked)} /> <span>Auto-split remaining {Math.max(0, estimatedHours - 8).toFixed(1)} hrs to next shift</span></label>}
+    </div>
+    
+    <Field label="Date"><TextInput type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} disabled={assigning} /></Field><Field label="Shift"><SelectInput value={selectedShift} onChange={(event) => setSelectedShift(event.target.value)} disabled={assigning}><option value="">Select shift</option><option value="A · 06:00–14:00">A · 06:00–14:00</option><option value="B · 14:00–22:00">B · 14:00–22:00</option><option value="C · 22:00–06:00">C · 22:00–06:00</option></SelectInput></Field><Field label="Machine"><SelectInput value={selectedCode} onChange={(event) => setSelectedMachine(event.target.value)} disabled={!eligibleMachines.length || assigning}><option value="">No eligible machine</option>{eligibleMachines.map((machine) => <option key={machine.id} value={machine.code}>{machine.code} · {machine.name}</option>)}</SelectInput></Field><Field label="Operator"><SelectInput value={selectedOperator} onChange={(event) => setSelectedOperator(event.target.value)} disabled={assigning}><option value="">Select operator</option>{DEMO_USERS.filter(u => u.roles.includes("MACHINE_OPERATOR")).map(u => <option key={u.id} value={u.name.split(" (")[0]}>{u.name}</option>)}</SelectInput></Field><Button size="sm" disabled={!selectedCode || !selectedShift || !selectedDate || !selectedOperator || assigning || alreadyAssigned} onClick={async () => { setAssigning(true); try { const res = await fetch("/api/production/assign-machine", { method: "POST", body: JSON.stringify({ operationId: operation.id, machineId: selectedCode, shift: fullShiftString, operator: selectedOperator, actor: user?.name, autoSplit }) }); const outcome = await res.json(); if (outcome.success) { toast("Assignment saved", isLarge && autoSplit ? "Assigned and remaining quantity auto-split to next shift." : "Operation assigned for the day.", "success"); setCommandRevision((current) => current + 1); window.location.reload(); } else { toast("Error", outcome.error, "error"); } } catch (err: any) { toast("Error", err.message, "error"); } finally { setAssigning(false); } }}>{assigning ? "Assigning…" : alreadyAssigned ? "Saved" : "Save Assignment"}</Button>{!eligibleMachines.length && <span className="field__hint">No unreserved IDLE {operation.stage.toLowerCase()} machine is currently available.</span>}</div>}{!canAssign && ["PLANNED", "PAUSED"].includes(operation.status) && <span className="field__hint">Machine assignment requires production.assign.</span>}
   {order?.materialShortage && operation.stage !== "SPINNING" && <div className="field__hint" style={{ color: "var(--madder)", fontWeight: "bold", marginTop: 8 }}>⚠️ Warning: Upstream material shortage. Assigning this task may stall production.</div>}
   </article>;
 }
 
 function MyWorkPage() {
   const { data, user, toast } = useDemo();
-  const assignedName = user?.name === "Ravi Kumar" ? "R. Kumar" : user?.name;
+  const assignedName = user?.name.split(" (")[0];
   const ops = data.operations.filter((operation) => {
-    const skillMatch = user?.name.match(/\((.*) Operator\)/i);
-    const skill = skillMatch ? skillMatch[1].toUpperCase() : null;
-    return Boolean(assignedName && operation.operators.includes(assignedName)) && (!skill || operation.stage === skill) && !["COMPLETED", "CANCELLED"].includes(operation.status);
+    return Boolean(assignedName && operation.operators.includes(assignedName)) && !["COMPLETED", "CANCELLED"].includes(operation.status);
   });
-  return <><PageHeader eyebrow="Floor view · assigned work" title={`Your work, ${user?.name.split(" ")[0] ?? "operator"}.`} description="Large-touch shift actions. No cost fields, no back-office clutter, and no pretend optimistic save." meta={<><Tag>SHIFT B · 14:00–22:00</Tag><Tag>10 OCT 2026</Tag></>} /><div className="info-strip info-strip--warning"><ShieldAlert size={18}/><div><strong>Floor mode</strong><div>Native scroll and feedback-only motion. This list contains only operations assigned to your demo profile. All updates reset with the session.</div></div></div><div className="page-grid">{ops.map((operation) => { const machine = data.machines.find((candidate) => candidate.code === operation.machineCode); return <Card className="col-6" key={operation.id} title={operation.code} action={<StatusBadge status={operation.status}/>}><div className="stage-card__meta"><span>Order {operation.orderCode}</span><span>{operation.stage}</span></div><div style={{ font: "900 26px var(--font-display)", margin: "11px 0" }}>{formatQty(operation.good, operation.unit, 1)} <span className="field__hint">good output</span></div><div className="stage-card__meta"><span>{operation.machineCode ?? "Machine unassigned"}</span><span>{operation.shift ?? "No shift"}</span></div><Meter value={operation.good} total={operation.target} label="Shift target"/><div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}><LinkButton href={`/production/operations/${operation.id}`} variant="primary" size="lg"><Activity size={17}/> Open operation</LinkButton>{machine && <LinkButton href={`/machines/${machine.id}`} variant="secondary" size="lg"><Wrench size={17}/> Machine</LinkButton>}{machine && <Button variant="quiet" size="lg" onClick={() => toast("Breakdown Reported", `Supervisor alerted for ${machine.code} breakdown.`, "error")} style={{ color: "var(--madder)", border: "2px solid var(--madder)", background: "#fff" }}><ShieldAlert size={17} /> Report Breakdown</Button>}</div></Card>; })}{ops.length === 0 && <div className="col-12"><EmptyState title="No operation is assigned to this user" detail="The demo list is intentionally not filled with every live operation. A planner or administrator must assign a real shift task before work appears here." action={<LinkButton href="/production" variant="secondary">Open production board</LinkButton>}/></div>}</div></>;
+  return <><PageHeader eyebrow="Floor view · assigned work" title={`Your work, ${user?.name.split(" ")[0] ?? "operator"}.`} description="Large-touch shift actions. No cost fields, no back-office clutter, and no pretend optimistic save." meta={<><Tag>TODAY'S SHIFT TASKS</Tag></>} /><div className="info-strip info-strip--warning"><ShieldAlert size={18}/><div><strong>Floor mode</strong><div>Native scroll and feedback-only motion. This list contains only operations assigned to your demo profile that you need to complete in this shift only.</div></div></div><div className="page-grid">{ops.map((operation) => { const machine = data.machines.find((candidate) => candidate.code === operation.machineCode); return <Card className="col-6" key={operation.id} title={operation.code} action={<StatusBadge status={operation.status}/>}><div className="stage-card__meta"><span>Order {operation.orderCode}</span><span>{operation.stage}</span></div><div style={{ font: "900 26px var(--font-display)", margin: "11px 0" }}>{formatQty(operation.good, operation.unit, 1)} <span className="field__hint">good output</span></div><div className="stage-card__meta"><span>{operation.machineCode ?? "Machine unassigned"}</span><span>{operation.shift ?? "No shift"}</span></div><Meter value={operation.good} total={operation.target} label="Shift target"/><div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}><LinkButton href={`/production/operations/${operation.id}`} variant="primary" size="lg"><Activity size={17}/> Log Production Details</LinkButton>{machine && <LinkButton href={`/machines/${machine.id}`} variant="secondary" size="lg"><Wrench size={17}/> Machine</LinkButton>}{machine && <Button variant="quiet" size="lg" onClick={async () => {
+  try {
+    const res = await fetch("/api/production/machine-status", {
+      method: "POST",
+      body: JSON.stringify({ machineId: machine.id, status: "BREAKDOWN", reason: "Operator reported breakdown from Floor View", actor: user?.name })
+    });
+    const outcome = await res.json();
+    if (outcome.success) {
+      toast("Breakdown Reported", `Supervisor alerted for ${machine.code} breakdown.`, "error");
+      setTimeout(() => window.location.reload(), 1500);
+    } else {
+      toast("Error", outcome.error, "error");
+    }
+  } catch(err: any) {
+    toast("Error", err.message, "error");
+  }
+}} style={{ color: "var(--madder)", border: "2px solid var(--madder)", background: "#fff" }}><ShieldAlert size={17} /> Report Breakdown</Button>}</div></Card>; })}{ops.length === 0 && <div className="col-12"><EmptyState title="No operation is assigned to this user" detail="The demo list is intentionally not filled with every live operation. A planner or administrator must assign a real shift task before work appears here." action={<LinkButton href="/production" variant="secondary">Open production board</LinkButton>}/></div>}</div></>;
 }
 
 function PlanPage({ id }: { id: string }) {

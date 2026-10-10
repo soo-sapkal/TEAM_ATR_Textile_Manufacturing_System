@@ -37,6 +37,7 @@ export default async function RoleScopedPage({ params }: { params: Promise<{ rol
   else if (path.startsWith("/hr/payroll/")) content = <BackOfficeRoute path={path} id={id}/>;
   else if (path.startsWith("/finance") || path.startsWith("/hr") || path.startsWith("/reports") || path === "/verify" || path === "/alerts" || path === "/notifications" || path === "/tasks") content = <BackOfficeRoute path={path} id={id}/>;
   else if (path.startsWith("/admin")) content = <AdminRoute path={path} id={id}/>;
+  else if (path === "/factory-flow") content = <FactoryFlowPage/>;
   else notFound();
 
   return content;
