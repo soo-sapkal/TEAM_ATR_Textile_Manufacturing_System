@@ -4,7 +4,6 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { DEMO_USERS } from "@/lib/auth/permissions";
 import { applyDemoCommand } from "@/lib/demo/commands";
 import { createDemoCommandAdapter } from "@/lib/api/adapter";
-import { fetchSupabaseData } from "@/lib/supabase/adapter";
 import { seedData } from "@/lib/demo/seed";
 import type { DemoData, DemoUser } from "@/lib/domain/types";
 
@@ -69,30 +68,7 @@ export function DemoProvider({ children }: { children: ReactNode }) {
   const user = useMemo(() => DEMO_USERS.find((candidate) => candidate.id === sessionUserId) ?? null, [sessionUserId]);
 
   useEffect(() => {
-    fetchSupabaseData().then((dbData) => {
-      if (Object.keys(dbData).length > 0) {
-        setData((current) => {
-          const merged = { ...current };
-          if (dbData.orders && dbData.orders.length > 0) merged.orders = dbData.orders;
-          if (dbData.machines && dbData.machines.length > 0) merged.machines = dbData.machines;
-          if (dbData.rolls && dbData.rolls.length > 0) merged.rolls = dbData.rolls;
-          if (dbData.shipments && dbData.shipments.length > 0) merged.shipments = dbData.shipments;
-          if (dbData.operations && dbData.operations.length > 0) merged.operations = dbData.operations;
-          if (dbData.yarnItems && dbData.yarnItems.length > 0) merged.yarnItems = dbData.yarnItems;
-          if (dbData.yarnBatches && dbData.yarnBatches.length > 0) merged.yarnBatches = dbData.yarnBatches;
-          
-          if (dbData.yarnMovements !== undefined) merged.yarnMovements = dbData.yarnMovements;
-          if (dbData.outputEvents !== undefined) merged.outputEvents = dbData.outputEvents;
-          if (dbData.inspectionEvents !== undefined) merged.inspectionEvents = dbData.inspectionEvents;
-          if (dbData.reworkEvents !== undefined) merged.reworkEvents = dbData.reworkEvents;
-          if (dbData.dispatchEvents !== undefined) merged.dispatchEvents = dbData.dispatchEvents;
-          if (dbData.machineEvents !== undefined) merged.machineEvents = dbData.machineEvents;
-
-          dataRef.current = merged;
-          return merged;
-        });
-      }
-    });
+    // Supabase interaction disabled, falling back to local seed data
   }, []);
 
   const toast = useCallback((title: string, detail?: string, tone: ToastMessage["tone"] = "info") => {
