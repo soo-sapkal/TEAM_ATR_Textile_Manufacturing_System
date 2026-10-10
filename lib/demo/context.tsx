@@ -85,6 +85,7 @@ export function DemoProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const clientReady = useSyncExternalStore(subscribeReady, getClientReady, getServerReady);
   const [user, setUser] = useState<DemoUser | null>(null);
+  const [isAuthLoaded, setIsAuthLoaded] = useState(false);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const ready = clientReady && isAuthLoaded && isDataLoaded;
 
