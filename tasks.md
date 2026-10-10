@@ -125,3 +125,39 @@ The current `DashboardPage.tsx` acts as a catch-all dashboard that conditionally
    - Links to "View Product/Yarn Catalog" and "Download Account Statement".
 5. **Recent Shipments & Logistics:**
    - A section showing recently dispatched trucks containing their goods, along with links to download Dispatch Manifests or Invoices.
+
+---
+
+# Task 7 - Uday: Remove Sidebar UI Toggles
+
+**Context & Requirements:**
+The current `StaffShell.tsx` and related layout components have toggles at the bottom of the sidebar for "Floor mode" and "Motion".
+
+1. **Remove UI Toggles:** 
+   - Remove the "Floor mode" toggle button from all sidebars.
+   - Remove the "Motion" toggle button from all sidebars.
+2. **Clean Up State/Logic:**
+   - Remove any associated React state (`floorMode`, `motionMode`) and DOM dataset manipulation from `StaffShell.tsx` since they will no longer be used.
+
+
+---
+
+# Task 8 - Uday: Dispatch Officer Enhancements & Fulfillment Workflow
+
+**Context & Requirements:**
+The Dispatch Officer needs a streamlined experience without duplicate pages, plus a complete fulfillment workflow from scanning final QC to printing the vehicle invoice.
+
+1. **Delete Redundant Page:**
+   - Delete the `app/(roles)/dispatch/shipments` page as it duplicates the dashboard.
+
+2. **Final Quality Report Scan Page:**
+   - Add a new page where the Dispatch Officer can scan barcode/roll IDs and fill out a final pre-dispatch quality report.
+   - *DB Analysis Note:* The current `FabricRoll` table only has a basic `defect` field. We will likely need to add `dispatchQcPassed` (boolean), `dispatchQcNotes` (text), and `dispatchQcBy` (uuid) to Supabase to support this step fully.
+
+3. **Fulfillment Dashboard & Workflow:**
+   - Create a page showing "Pending Orders" (needing fulfillment) and "Completed Orders".
+   - On pending orders, add a **"Fulfill"** button that triggers a multi-step workflow:
+     - **Step 1 (Loading Manifest):** Displays a downloadable/printable list of the exact rolls/items needed to be loaded into the transport vehicle.
+     - **Step 2 (Vehicle Details):** A form asking for transport details.
+       - *DB Analysis Note:* The current `Shipment` table only has a generic `vehicle` string. We need to add `driverName`, `licensePlate`, `transportAgency`, and `ewayBillNumber` to the Supabase schema.
+     - **Step 3 (Invoice Generation):** Generates a final printable invoice / gate pass for the vehicle containing all order, item, and transport details.
