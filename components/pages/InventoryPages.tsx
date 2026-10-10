@@ -35,11 +35,17 @@ function InventoryPage() {
 
   return <>
     <PageHeader eyebrow="Make & move · yarn store" title="Yarn inventory" description="Physical on-hand, reserved, available, and held stay separate. Quantities are batch-aware and displayed in each item's unit." actions={<><LinkButton href="/inventory/movements" variant="secondary"><History size={14}/> Movement ledger</LinkButton>{hasPermission(user, "inventory.receive") && <LinkButton href="/inventory/receive" variant="primary"><PackagePlus size={14}/> Receive yarn</LinkButton>}</>} meta={<><Tag>WH-YARN · DEMO</Tag><Tag>5 MATERIAL ITEMS</Tag></>} />
-    {isManagement && lowStockItems.length > 0 && (
+    {isManagement && (
       <div style={{ marginBottom: 24 }}>
-        <InfoStrip tone="warning" title="Low Stock Warning">
-          {lowStockItems.length} yarn {lowStockItems.length === 1 ? 'item is' : 'items are'} approaching or below reorder levels. Please review stock for: {lowStockItems.map(i => i.code).join(", ")}.
-        </InfoStrip>
+        {lowStockItems.length > 0 ? (
+          <InfoStrip tone="warning" title="Stock Level Alerts">
+            {lowStockItems.length} yarn {lowStockItems.length === 1 ? 'item is' : 'items are'} approaching or below reorder levels. Please review stock for: <strong>{lowStockItems.map(i => i.code).join(", ")}</strong>.
+          </InfoStrip>
+        ) : (
+          <InfoStrip tone="success" title="Stock Level Alerts">
+            All yarn products are currently maintaining healthy inventory levels above their reorder thresholds.
+          </InfoStrip>
+        )}
       </div>
     )}
     <div className="stat-grid"><div className="stat-card stat-card--cotton"><div className="stat-card__top">On hand · by unit</div><strong>{totalFor("onHand")}</strong><div className="stat-card__bottom">physical accepted + held</div></div><div className="stat-card stat-card--indigo"><div className="stat-card__top">Reserved · by unit</div><strong>{totalFor("reserved")}</strong><div className="stat-card__bottom">linked to plans</div></div><div className="stat-card stat-card--neem"><div className="stat-card__top">Available · by unit</div><strong>{totalFor("available")}</strong><div className="stat-card__bottom">usable for new plans</div></div><div className="stat-card stat-card--turmeric"><div className="stat-card__top">Held · by unit</div><strong>{totalFor("held")}</strong><div className="stat-card__bottom">not available to reserve</div></div></div>
