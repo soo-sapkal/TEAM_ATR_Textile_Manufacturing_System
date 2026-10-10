@@ -18,6 +18,7 @@ export function BackOfficeRoute({ path, id }: { path: string; id?: string }) {
   if (path.startsWith("/finance/orders/")) return <OrderCostPage id={id ?? ""}/>;
   if (path === "/finance/entries") return <FinanceEntriesPage/>;
   if (path === "/finance/payments") return <PaymentsPage/>;
+  if (path === "/finance/payables") return <PayablesPage/>;
   if (path === "/finance/expenses") return <ExpensesPage/>;
   if (path === "/hr/attendance") return <AttendancePage/>;
   if (path.startsWith("/hr/payroll/")) return <PayrollPeriodPage id={id ?? ""}/>;
@@ -33,7 +34,7 @@ function FinancePage() {
   const estimated = data.orders.reduce((sum, order) => sum.plus(order.estimatedCost), new Decimal(0));
   const revenue = data.orders.reduce((sum, order) => sum.plus(order.revenue), new Decimal(0));
   const missingRates = data.machines.filter((machine) => machine.costPerHour === null);
-  return <><PageHeader eyebrow="Close the books · finance desk" title="Costs with a stated basis." description="Separate posted actual, allocated overhead, estimate, and missing source rates. A missing rate is not a zero cost." actions={<><LinkButton href="/finance/entries" variant="secondary"><ReceiptText size={14}/> Cost entries</LinkButton><LinkButton href="/finance/payments" variant="secondary">Buyer payments</LinkButton><LinkButton href="/reports/month-close" variant="primary"><BookOpenCheck size={14}/> Month close</LinkButton></>} meta={<><Tag>OCTOBER 2026 · OPEN</Tag><Tag>INR · ASIA/KOLKATA</Tag></>} /><div className="stat-grid"><div className="stat-card stat-card--indigo"><div className="stat-card__top">Recorded cost · actual/allocated</div><strong>{formatMoney(booked.toFixed(2))}</strong><div className="stat-card__bottom">source rows visible</div></div><div className="stat-card stat-card--turmeric"><div className="stat-card__top">Estimated / pending</div><strong>{formatMoney(estimated.toFixed(2))}</strong><div className="stat-card__bottom">not included in actual</div></div><div className="stat-card stat-card--neem"><div className="stat-card__top">Buyer value · contracted</div><strong>{formatMoney(revenue.toFixed(2))}</strong><div className="stat-card__bottom">not cash collected</div></div><div className="stat-card stat-card--madder"><div className="stat-card__top">Missing machine rates</div><strong>{missingRates.length}</strong><div className="stat-card__bottom">not treated as zero</div></div></div><div className="page-grid"><Card className="col-8" title="Order margin, by recorded basis" action={<Link href="/finance/entries" className="btn btn--quiet btn--sm">All cost rows <ArrowRight size={12}/></Link>}><DataTable headers={["Order", "Buyer", "Contract", "Recorded cost", "Estimate", "Margin state", "Cost detail"]} rows={data.orders.map((order) => { const margin = new Decimal(order.revenue).minus(order.recordedCost); const complete = new Decimal(order.recordedCost).gt(0) && new Decimal(order.estimatedCost).eq(0); return [<Link href={`/finance/orders/${order.id}`} className="code">{order.code}</Link>, order.buyer, formatMoney(order.revenue), formatMoney(order.recordedCost), formatMoney(order.estimatedCost), <StatusBadge status={complete ? "ACTUAL" : "ESTIMATED"} label={complete ? `Recorded margin ${formatMoney(margin.toFixed(2))}` : "Incomplete basis"}/>, <Link href={`/finance/orders/${order.id}`} className="btn btn--secondary btn--sm">Detail <ArrowRight size={12}/></Link>]; })}/></Card><Card className="col-4" title="Cost coverage"><div className="stack-sm">{data.machines.map((machine) => <div key={machine.id} style={{ display: "flex", justifyContent: "space-between", gap: 9, padding: "7px 0", borderBottom: "1px solid #d4cfbd" }}><span className="code">{machine.code}</span>{machine.costPerHour ? <span className="num">{formatMoney(machine.costPerHour)}/hr</span> : <StatusBadge status="MISSING" label="Rate missing"/>}</div>)}</div><InfoStrip tone="warning">Per-machine labor/overhead allocation needs approved rates and run time. Do not substitute a default rate.</InfoStrip></Card><Card className="col-12" title="Basis policy"><div className="page-grid"><div className="col-3"><StatusBadge status="ACTUAL"/><p className="cell-secondary">Posted supplier, payroll, or direct cost event.</p></div><div className="col-3"><StatusBadge status="ALLOCATED"/><p className="cell-secondary">Overhead assigned using a documented driver.</p></div><div className="col-3"><StatusBadge status="ESTIMATED"/><p className="cell-secondary">Planning estimate; never called actual.</p></div><div className="col-3"><StatusBadge status="MISSING"/><p className="cell-secondary">No source rate/cost; remain visible as missing.</p></div></div></Card></div></>;
+  return <><PageHeader eyebrow="Close the books · finance desk" title="Costs with a stated basis." description="Separate posted actual, allocated overhead, estimate, and missing source rates. A missing rate is not a zero cost." actions={<><LinkButton href="/finance/entries" variant="secondary"><ReceiptText size={14}/> Cost entries</LinkButton><LinkButton href="/finance/payments" variant="secondary">Accounts Receivable</LinkButton><LinkButton href="/finance/payables" variant="secondary">Accounts Payable</LinkButton><LinkButton href="/reports/month-close" variant="primary"><BookOpenCheck size={14}/> Month close</LinkButton></>} meta={<><Tag>OCTOBER 2026 · OPEN</Tag><Tag>INR · ASIA/KOLKATA</Tag></>} /><div className="stat-grid"><div className="stat-card stat-card--indigo"><div className="stat-card__top">Recorded cost · actual/allocated</div><strong>{formatMoney(booked.toFixed(2))}</strong><div className="stat-card__bottom">source rows visible</div></div><div className="stat-card stat-card--turmeric"><div className="stat-card__top">Estimated / pending</div><strong>{formatMoney(estimated.toFixed(2))}</strong><div className="stat-card__bottom">not included in actual</div></div><div className="stat-card stat-card--neem"><div className="stat-card__top">Buyer value · contracted</div><strong>{formatMoney(revenue.toFixed(2))}</strong><div className="stat-card__bottom">not cash collected</div></div><div className="stat-card stat-card--madder"><div className="stat-card__top">Missing machine rates</div><strong>{missingRates.length}</strong><div className="stat-card__bottom">not treated as zero</div></div></div><div className="page-grid"><Card className="col-8" title="Order margin, by recorded basis" action={<Link href="/finance/entries" className="btn btn--quiet btn--sm">All cost rows <ArrowRight size={12}/></Link>}><DataTable headers={["Order", "Buyer", "Contract", "Recorded cost", "Estimate", "Margin state", "Cost detail"]} rows={data.orders.map((order) => { const margin = new Decimal(order.revenue).minus(order.recordedCost); const complete = new Decimal(order.recordedCost).gt(0) && new Decimal(order.estimatedCost).eq(0); return [<Link href={`/finance/orders/${order.id}`} className="code">{order.code}</Link>, order.buyer, formatMoney(order.revenue), formatMoney(order.recordedCost), formatMoney(order.estimatedCost), <StatusBadge status={complete ? "ACTUAL" : "ESTIMATED"} label={complete ? `Recorded margin ${formatMoney(margin.toFixed(2))}` : "Incomplete basis"}/>, <Link href={`/finance/orders/${order.id}`} className="btn btn--secondary btn--sm">Detail <ArrowRight size={12}/></Link>]; })}/></Card><Card className="col-4" title="Cost coverage"><div className="stack-sm">{data.machines.map((machine) => <div key={machine.id} style={{ display: "flex", justifyContent: "space-between", gap: 9, padding: "7px 0", borderBottom: "1px solid #d4cfbd" }}><span className="code">{machine.code}</span>{machine.costPerHour ? <span className="num">{formatMoney(machine.costPerHour)}/hr</span> : <StatusBadge status="MISSING" label="Rate missing"/>}</div>)}</div><InfoStrip tone="warning">Per-machine labor/overhead allocation needs approved rates and run time. Do not substitute a default rate.</InfoStrip></Card><Card className="col-12" title="Basis policy"><div className="page-grid"><div className="col-3"><StatusBadge status="ACTUAL"/><p className="cell-secondary">Posted supplier, payroll, or direct cost event.</p></div><div className="col-3"><StatusBadge status="ALLOCATED"/><p className="cell-secondary">Overhead assigned using a documented driver.</p></div><div className="col-3"><StatusBadge status="ESTIMATED"/><p className="cell-secondary">Planning estimate; never called actual.</p></div><div className="col-3"><StatusBadge status="MISSING"/><p className="cell-secondary">No source rate/cost; remain visible as missing.</p></div></div></Card></div></>;
 }
 
 function OrderCostPage({ id }: { id: string }) {
@@ -154,6 +155,129 @@ function PaymentsPage() {
       </Card>
       <Card title="Recent Receipts">
         <DataTable headers={["Date", "Reference", "Method", "Amount"]} rows={payments.slice(0,5).map(p => [formatDate(p.paymentDate), p.referenceNo, p.paymentMethod, formatMoney(p.amountPaid)])} empty={<EmptyState title="No receipts recorded"/>} />
+      </Card>
+    </div>
+  </div></>;
+}
+
+function PayablesPage() {
+  const { data, toast } = useDemo();
+  const bills = data.supplierBills || [];
+  const payments = data.supplierPayments || [];
+  
+  const [billId, setBillId] = useState("");
+  const [amount, setAmount] = useState("");
+  const [reference, setReference] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("WIRE");
+  const [busy, setBusy] = useState(false);
+
+  // For creating a new bill
+  const [newSupplier, setNewSupplier] = useState("");
+  const [newAmount, setNewAmount] = useState("");
+  const [newDue, setNewDue] = useState("");
+  const [newBatchId, setNewBatchId] = useState("");
+
+  const today = new Date();
+  const pastDue = bills.filter(b => b.status !== "PAID" && new Date(b.dueDate) < today);
+  const totalPastDue = pastDue.reduce((sum, b) => sum.plus(b.amountDue), new Decimal(0));
+  
+  const selectedBill = bills.find(b => b.id === billId);
+  const paidAgainstSelected = payments.filter(p => p.billId === billId).reduce((sum, p) => sum.plus(p.amountPaid), new Decimal(0));
+  const openBalance = selectedBill ? new Decimal(selectedBill.amountDue).minus(paidAgainstSelected) : new Decimal(0);
+
+  async function submitPayment(event: FormEvent) {
+    event.preventDefault();
+    if (busy || !selectedBill) return;
+    const value = new Decimal(amount || 0);
+    if (value.lte(0) || value.gt(openBalance)) {
+      toast("Invalid Amount", "Payment must be positive and not exceed outstanding balance.", "error");
+      return;
+    }
+
+    setBusy(true);
+    const res = await fetch("/api/finance/supplier-payments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ billId, amountPaid: amount, paymentMethod, referenceNo: reference })
+    });
+    
+    if (res.ok) {
+      toast("Payment Sent", `Recorded ${formatMoney(amount)} sent to ${selectedBill.supplierName}`, "success");
+      setAmount(""); setReference(""); window.location.reload();
+    } else {
+      toast("Payment Failed", "Could not record payment.", "error");
+    }
+    setBusy(false);
+  }
+
+  async function submitBill(event: FormEvent) {
+    event.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    const res = await fetch("/api/finance/supplier-bills", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ supplierName: newSupplier, amountDue: newAmount, dueDate: newDue, referenceBatchId: newBatchId })
+    });
+    
+    if (res.ok) {
+      toast("Bill Logged", `Recorded new bill for ${newSupplier}`, "success");
+      setNewSupplier(""); setNewAmount(""); setNewDue(""); setNewBatchId(""); window.location.reload();
+    } else {
+      toast("Error", "Could not log bill.", "error");
+    }
+    setBusy(false);
+  }
+
+  return <><PageHeader eyebrow="Finance · Accounts Payable" title="Supplier Bills & Payments" description="Log incoming bills from raw material suppliers and track outgoing cash payments." actions={<LinkButton href="/finance" variant="secondary"><ArrowLeft size={14}/> Finance Desk</LinkButton>} />
+  <div className="stat-grid" style={{ marginBottom: "2rem" }}>
+    <div className="stat-card stat-card--madder"><div className="stat-card__top">Past Due AP</div><strong>{formatMoney(totalPastDue.toFixed(2))}</strong><div className="stat-card__bottom">{pastDue.length} bills overdue</div></div>
+    <div className="stat-card stat-card--indigo"><div className="stat-card__top">Open Bills</div><strong>{bills.filter(b => b.status !== "PAID").length}</strong><div className="stat-card__bottom">Awaiting payment</div></div>
+    <div className="stat-card stat-card--neem"><div className="stat-card__top">Cash Paid Out</div><strong>{formatMoney(payments.reduce((sum, p) => sum.plus(p.amountPaid), new Decimal(0)).toFixed(2))}</strong><div className="stat-card__bottom">{payments.length} transactions</div></div>
+  </div>
+  <div className="two-pane">
+    <div className="stack">
+      <form className="card stack" onSubmit={submitBill}>
+        <div className="card__head"><h2>Log Supplier Bill</h2><Tag>LIABILITY</Tag></div>
+        <div className="form-grid">
+          <Field label="Supplier Name"><TextInput value={newSupplier} onChange={(e) => setNewSupplier(e.target.value)} required disabled={busy}/></Field>
+          <Field label="Amount Due (INR)"><TextInput inputMode="decimal" value={newAmount} onChange={(e) => setNewAmount(e.target.value)} required disabled={busy}/></Field>
+          <Field label="Due Date"><TextInput type="date" value={newDue} onChange={(e) => setNewDue(e.target.value)} required disabled={busy}/></Field>
+          <Field label="Yarn Batch Ref (Optional)"><TextInput value={newBatchId} onChange={(e) => setNewBatchId(e.target.value)} disabled={busy}/></Field>
+        </div>
+        <Button type="submit" disabled={busy}>{busy ? "Saving..." : "Log Bill"}</Button>
+      </form>
+
+      <form className="card stack" onSubmit={submitPayment}>
+        <div className="card__head"><h2>Record Outgoing Payment</h2><Tag>CASH OUT</Tag></div>
+        <Field label="Select Open Bill">
+          <SelectInput value={billId} onChange={(e) => setBillId(e.target.value)} disabled={busy}>
+            <option value="">Select bill...</option>
+            {bills.filter(b => b.status !== "PAID").map(b => (
+              <option key={b.id} value={b.id}>{b.supplierName} · {formatMoney(b.amountDue)}</option>
+            ))}
+          </SelectInput>
+        </Field>
+        {selectedBill && (
+          <div className="info-strip">
+            <Wallet size={17}/>
+            <div><strong>Outstanding balance</strong><div>{formatMoney(openBalance.toFixed(2))} remaining to pay</div></div>
+          </div>
+        )}
+        <Field label="Amount Paid · INR"><TextInput inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} required disabled={busy}/></Field>
+        <div className="form-grid">
+          <Field label="Method"><SelectInput value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} disabled={busy}><option value="WIRE">Bank Wire</option><option value="CHEQUE">Cheque</option><option value="CASH">Cash</option></SelectInput></Field>
+          <Field label="Reference"><TextInput value={reference} onChange={(e) => setReference(e.target.value)} required minLength={3} disabled={busy}/></Field>
+        </div>
+        <Button type="submit" disabled={busy || !billId}>{busy ? "Recording..." : "Record Payment"}</Button>
+      </form>
+    </div>
+    <div className="stack">
+      <Card title="Open Supplier Bills">
+        <DataTable headers={["Supplier", "Due", "Amount", "Status"]} rows={bills.filter(b => b.status !== "PAID").slice(0,5).map(b => [b.supplierName, formatDate(b.dueDate), formatMoney(b.amountDue), <StatusBadge status={b.status}/>])} empty={<EmptyState title="No open bills"/>} />
+      </Card>
+      <Card title="Recent Outgoing Payments">
+        <DataTable headers={["Date", "Supplier", "Amount"]} rows={payments.slice(0,5).map(p => { const b = bills.find(x => x.id === p.billId); return [formatDate(p.paymentDate), b ? b.supplierName : "Unknown", formatMoney(p.amountPaid)]; })} empty={<EmptyState title="No payments recorded"/>} />
       </Card>
     </div>
   </div></>;

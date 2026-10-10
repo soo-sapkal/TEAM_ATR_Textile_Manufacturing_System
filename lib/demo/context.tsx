@@ -71,7 +71,11 @@ function cloneSeed(): DemoData {
     dispatchEvents: [],
     machineEvents: [],
     processedCommandKeys: [],
-    notifications: []
+    notifications: [],
+    invoices: [],
+    payments: [],
+    supplierBills: [],
+    supplierPayments: []
   };
 }
 
@@ -193,6 +197,23 @@ export function DemoProvider({ children }: { children: ReactNode }) {
               ...prev,
               invoices: res.data.invoices || prev.invoices,
               payments: res.data.payments || prev.payments
+            };
+            dataRef.current = next;
+            return next;
+          });
+        }
+      })
+      .catch(console.error);
+
+    fetch("/api/finance/payables")
+      .then((r) => r.json())
+      .then((res) => {
+        if (res.data) {
+          setData((prev) => {
+            const next = {
+              ...prev,
+              supplierBills: res.data.supplierBills || prev.supplierBills,
+              supplierPayments: res.data.supplierPayments || prev.supplierPayments
             };
             dataRef.current = next;
             return next;

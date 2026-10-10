@@ -257,6 +257,8 @@ export interface DemoData {
   notifications: { id: string; title: string; body: string; href: string; unread: boolean; when: string }[];
   invoices: Invoice[];
   payments: Payment[];
+  supplierBills: SupplierBill[];
+  supplierPayments: SupplierPayment[];
 }
 
 export interface ApiEnvelope<T> {
@@ -280,6 +282,26 @@ export interface Invoice {
 export interface Payment {
   id: string;
   invoiceId: string;
+  amountPaid: number;
+  paymentMethod: string;
+  referenceNo: string;
+  paymentDate: string;
+  createdAt: string;
+}
+
+export interface SupplierBill {
+  id: string;
+  supplierName: string;
+  referenceBatchId?: string;
+  amountDue: number;
+  dueDate: string;
+  status: "PENDING" | "PARTIAL" | "PAID";
+  createdAt: string;
+}
+
+export interface SupplierPayment {
+  id: string;
+  billId: string;
   amountPaid: number;
   paymentMethod: string;
   referenceNo: string;

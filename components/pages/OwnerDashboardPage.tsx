@@ -15,9 +15,15 @@ export function OwnerDashboardPage() {
   // Financial metrics
   const invoices = data.invoices || [];
   const payments = data.payments || [];
+  const supplierBills = data.supplierBills || [];
+  const supplierPayments = data.supplierPayments || [];
+  
   const totalRevenue = data.orders.reduce((sum, order) => sum.plus(order.revenue), new Decimal(0));
   const cashCollected = payments.reduce((sum, p) => sum.plus(p.amountPaid), new Decimal(0));
   const outstandingAR = invoices.reduce((sum, inv) => sum.plus(inv.amountDue), new Decimal(0)).minus(cashCollected);
+
+  const cashPaidOut = supplierPayments.reduce((sum, p) => sum.plus(p.amountPaid), new Decimal(0));
+  const outstandingAP = supplierBills.reduce((sum, bill) => sum.plus(bill.amountDue), new Decimal(0)).minus(cashPaidOut);
 
   // Operations metrics
   const breakdowns = data.machines.filter((machine) => machine.status === "BREAKDOWN");
@@ -79,6 +85,23 @@ export function OwnerDashboardPage() {
           detail={`${breakdowns.length} down machines, ${atRisk.length} delayed orders`} 
           icon={breakdowns.length === 0 && atRisk.length === 0 ? CheckCircle2 : AlertTriangle} 
           tone={breakdowns.length === 0 && atRisk.length === 0 ? "neem" : "madder"} 
+        />
+      </div>
+
+      <div className="stat-grid" style={{ marginBottom: "2rem" }}>
+        <StatCard 
+          label="Cash Paid Out (Suppliers)" 
+          value={formatMoney(cashPaidOut, "INR")} 
+          detail={`${supplierPayments.length} supplier payments sent`} 
+          icon={CircleDollarSign} 
+          tone="madder" 
+        />
+        <StatCard 
+          label="Outstanding AP" 
+          value={formatMoney(outstandingAP, "INR")} 
+          detail="Pending supplier bills" 
+          icon={AlertTriangle} 
+          tone="indigo" 
         />
       </div>
 
