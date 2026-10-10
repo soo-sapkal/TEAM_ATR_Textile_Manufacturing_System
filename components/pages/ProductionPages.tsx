@@ -527,7 +527,7 @@ export function AssignTaskModal({ operatorName, shift, unassignedOps, onClose }:
           <Field label="Order Task">
             <SelectInput value={selectedOpId} onChange={e => { setSelectedOpId(e.target.value); setSelectedMachine(""); }} disabled={assigning}>
                <option value="">Select task...</option>
-               {unassignedOps.map(op => {
+               {unassignedOps.filter(op => { const lower = operatorName.toLowerCase(); const hasSpin = lower.includes("spinning"); const hasWeave = lower.includes("weaving"); const hasDye = lower.includes("dyeing"); if (!hasSpin && !hasWeave && !hasDye) return true; return (hasSpin && op.stage === "SPINNING") || (hasWeave && op.stage === "WEAVING") || (hasDye && op.stage === "DYEING"); }).map(op => {
                  const order = data.orders.find(o => o.code === op.orderCode);
                  const est = new Decimal(op.target).div(50).toNumber().toFixed(1);
                  return <option key={op.id} value={op.id}>{op.orderCode} · {op.stage} (Est: {est} hrs)</option>;
