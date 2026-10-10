@@ -79,3 +79,41 @@ ON CONFLICT (code) DO NOTHING;
 INSERT INTO public.shipments (code, order_code, roll_ids, buyer, status, rolls, qty, unit, vehicle, planned_at, amount) VALUES
   ('SHP-2026-001', 'ORD-2026-001', '["ROLL-2026-103", "ROLL-2026-104"]'::jsonb, 'Anita Textiles', 'DRAFT', 2, 2000.000, 'M', 'MH-04-JK-8821', NOW() + INTERVAL '1 day', 250000.00)
 ON CONFLICT (code) DO NOTHING;
+
+-- 11. Products and BOMs
+INSERT INTO public.products (id, code, name, description, category) VALUES
+  ('a1b2c3d4-e5f6-4a5b-8c9d-012345678901', 'FAB-221', 'FAB-221 Indigo Twill', 'Premium indigo twill fabric', 'Twill'),
+  ('b2c3d4e5-f6a7-4b5c-9d0e-123456789012', 'FAB-118', 'FAB-118 Cotton Sateen', 'Soft cotton sateen for luxury wear', 'Sateen'),
+  ('c3d4e5f6-a7b8-4c5d-0e1f-234567890123', 'FAB-307', 'FAB-307 Linen Blend', 'Breathable linen-cotton blend', 'Linen'),
+  ('d4e5f6a7-b8c9-4d5e-1f20-345678901234', '100% Cotton Poplin 40s', '100% Cotton Poplin 40s', 'Standard poplin for shirts', 'Poplin'),
+  ('e5f6a7b8-c9d0-4e5f-2031-456789012345', 'Organic Poly-Cotton Twill', 'Organic Poly-Cotton Twill', 'Durable and organic blend', 'Twill')
+ON CONFLICT (code) DO NOTHING;
+
+INSERT INTO public.bill_of_materials (product_id, yarn_item_id, quantity_required, unit) 
+SELECT p.id, y.id, 0.45, 'KG' FROM public.products p, public.yarn_items y WHERE p.code = 'FAB-221' AND y.code = 'YRN-COT-40S'
+ON CONFLICT (product_id, yarn_item_id) DO NOTHING;
+
+INSERT INTO public.bill_of_materials (product_id, yarn_item_id, quantity_required, unit)
+SELECT p.id, y.id, 0.50, 'KG' FROM public.products p, public.yarn_items y WHERE p.code = 'FAB-118' AND y.code = 'YRN-COT-40S'
+ON CONFLICT (product_id, yarn_item_id) DO NOTHING;
+
+INSERT INTO public.bill_of_materials (product_id, yarn_item_id, quantity_required, unit)
+SELECT p.id, y.id, 0.30, 'KG' FROM public.products p, public.yarn_items y WHERE p.code = 'FAB-307' AND y.code = 'YRN-LINEN-60S'
+ON CONFLICT (product_id, yarn_item_id) DO NOTHING;
+
+INSERT INTO public.bill_of_materials (product_id, yarn_item_id, quantity_required, unit)
+SELECT p.id, y.id, 0.20, 'KG' FROM public.products p, public.yarn_items y WHERE p.code = 'FAB-307' AND y.code = 'YRN-COT-40S'
+ON CONFLICT (product_id, yarn_item_id) DO NOTHING;
+
+INSERT INTO public.bill_of_materials (product_id, yarn_item_id, quantity_required, unit)
+SELECT p.id, y.id, 0.40, 'KG' FROM public.products p, public.yarn_items y WHERE p.code = '100% Cotton Poplin 40s' AND y.code = 'YRN-COT-40S'
+ON CONFLICT (product_id, yarn_item_id) DO NOTHING;
+
+INSERT INTO public.bill_of_materials (product_id, yarn_item_id, quantity_required, unit)
+SELECT p.id, y.id, 0.25, 'KG' FROM public.products p, public.yarn_items y WHERE p.code = 'Organic Poly-Cotton Twill' AND y.code = 'YRN-COT-40S'
+ON CONFLICT (product_id, yarn_item_id) DO NOTHING;
+
+INSERT INTO public.bill_of_materials (product_id, yarn_item_id, quantity_required, unit)
+SELECT p.id, y.id, 0.25, 'KG' FROM public.products p, public.yarn_items y WHERE p.code = 'Organic Poly-Cotton Twill' AND y.code = 'YRN-POLY-150D'
+ON CONFLICT (product_id, yarn_item_id) DO NOTHING;
+

@@ -1,5 +1,5 @@
-import { DashboardPage } from "@/components/pages/DashboardPage";
+import { OwnerDashboardPage } from "@/components/pages/OwnerDashboardPage";
 
-export default function OwnerDashboardPage() {
-  return <DashboardPage />;
+export default function OwnerDashboardRoute() {
+  return <OwnerDashboardPage />;
 }

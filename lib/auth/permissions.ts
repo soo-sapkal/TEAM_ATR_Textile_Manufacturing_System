@@ -50,10 +50,18 @@ export function landingFor(permissions: Permission[]): string {
 export const ROLE_NAVIGATION: Record<string, { label: string; items: { label: string; href: string; icon: string; any?: Permission[] }[] }[]> = {
   OWNER: [
     { label: "Overview", items: [{ label: "Dashboard", href: "/owner/dashboard", icon: "grid" }] },
+    { label: "Production", items: [
+      { label: "Orders", href: "/owner/orders", icon: "orders" },
+      { label: "Plan & Assign", href: "/owner/production", icon: "production" },
+      { label: "Factory Flow", href: "/owner/factory-flow", icon: "grid" }
+    ] },
     { label: "Operations", items: [
       { label: "Product Master", href: "/products", icon: "box" },
       { label: "Inventory", href: "/owner/inventory", icon: "inventory" },
       { label: "Machines", href: "/owner/machines", icon: "machine" }
+    ] },
+    { label: "Logistics", items: [
+      { label: "Dispatch", href: "/owner/dispatch", icon: "dispatch" }
     ] },
     { label: "Financials", items: [{ label: "Finance & Payroll", href: "/owner/finance", icon: "finance" }] }
   ],
