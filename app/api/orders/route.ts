@@ -17,7 +17,7 @@ export async function GET() {
   let permissions = payload?.permissions || [];
   if (permissions.length === 0 && payload?.role) {
     const { ROLE_PERMISSIONS } = await import("@/lib/auth/permissions");
-    permissions = ROLE_PERMISSIONS[payload.role] || [];
+    permissions = ROLE_PERMISSIONS[payload.role]?.perms || [];
   }
 
   if (!payload || !permissions.includes("orders.read")) {
@@ -43,7 +43,7 @@ export async function POST(req: Request) {
     let permissions = payload?.permissions || [];
     if (permissions.length === 0 && payload?.role) {
       const { ROLE_PERMISSIONS } = await import("@/lib/auth/permissions");
-      permissions = ROLE_PERMISSIONS[payload.role] || [];
+      permissions = ROLE_PERMISSIONS[payload.role]?.perms || [];
     }
 
     if (!payload || !permissions.includes("orders.create")) {

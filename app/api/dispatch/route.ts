@@ -17,7 +17,7 @@ export async function GET() {
   let permissions = payload?.permissions || [];
   if (permissions.length === 0 && payload?.role) {
     const { ROLE_PERMISSIONS } = await import("@/lib/auth/permissions");
-    permissions = ROLE_PERMISSIONS[payload.role] || [];
+    permissions = ROLE_PERMISSIONS[payload.role]?.perms || [];
   }
 
   if (!payload || !permissions.includes("dispatch.read")) {
@@ -28,7 +28,7 @@ export async function GET() {
     const [shipmentsRes, eventsRes, rollsRes] = await Promise.all([
       pool.query("SELECT * FROM shipments ORDER BY created_at DESC"),
       pool.query("SELECT * FROM dispatch_events ORDER BY recorded_at DESC"),
-      pool.query("SELECT * FROM fabric_rolls ORDER BY recorded_at DESC")
+      pool.query("SELECT * FROM fabric_rolls ORDER BY created_at DESC")
     ]);
 
     return NextResponse.json({
