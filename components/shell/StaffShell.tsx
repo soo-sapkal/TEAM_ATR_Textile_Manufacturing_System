@@ -19,8 +19,6 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
   const [query, setQuery] = useState("");
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [floorMode, setFloorMode] = useState(false);
-  const [motionMode, setMotionMode] = useState<"system" | "reduced">("system");
   const searchRef = useRef<HTMLInputElement>(null);
   const title = titleForPath(pathname);
 
@@ -73,7 +71,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
     <aside className="sidebar" aria-label="Staff navigation">
       <div className="sidebar__identity"><Link href="/dashboard" aria-label="Loom Ledger dashboard"><BrandMark /></Link><span className="role-chip">{user.roles.join(" + ")} · Demo</span></div>
       <nav className="sidebar__nav">{visibleSections.map((section) => <div className="nav-section" key={section.label}><span className="nav-section__label">{section.label}</span>{section.items.map((item) => { const Icon = ICONS[item.icon]; const active = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(`${item.href}/`)); return <Link key={item.href} className={`nav-link${active ? " nav-link--active" : ""}`} href={item.href} aria-current={active ? "page" : undefined}>{Icon && <Icon size={16} strokeWidth={2.2}/>}<span>{item.label}</span>{item.href === "/machines" && alertCount > 0 && <span className="nav-badge" aria-label={`${alertCount} alerts`}>{alertCount}</span>}{item.href === "/quality" && data.rolls.filter((roll) => roll.status === "AWAITING_INSPECTION").length > 0 && <span className="nav-badge" aria-label="Rolls waiting for inspection">{data.rolls.filter((roll) => roll.status === "AWAITING_INSPECTION").length}</span>}</Link>; })}</div>)}</nav>
-      <div className="sidebar__bottom"><div className="sidebar-control"><span>Floor mode</span><button type="button" aria-pressed={floorMode} onClick={() => { const enabled = !floorMode; setFloorMode(enabled); document.documentElement.dataset.floorMode = enabled ? "on" : "off"; }}>{floorMode ? "On · large targets" : "Off"}</button></div><div className="sidebar-control"><span>Motion</span><button type="button" aria-pressed={motionMode === "reduced"} onClick={() => { const next = motionMode === "system" ? "reduced" : "system"; setMotionMode(next); document.documentElement.dataset.motion = next; window.dispatchEvent(new Event("loom-motion-change")); }}>{motionMode === "reduced" ? "Reduced" : "System"}</button></div><div className="sidebar-control"><span>Session</span><button type="button" onClick={() => { logout(); router.push("/login"); }} style={{ color: "var(--madder)", fontWeight: 700 }}>Log out</button></div></div>
+      <div className="sidebar__bottom"><div className="sidebar-control"><span>Session</span><button type="button" onClick={() => { logout(); router.push("/login"); }} style={{ color: "var(--madder)", fontWeight: 700 }}>Log out</button></div></div>
     </aside>
     <div className="app-main">
       <header className="topbar">

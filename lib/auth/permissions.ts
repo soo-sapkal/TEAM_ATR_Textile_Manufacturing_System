@@ -8,7 +8,7 @@ export const ROLE_PERMISSIONS: Record<string, Role> = {
   MACHINE_OPERATOR: { name: "Machine Operator", landing: "/my-work", perms: ["production.read", "production.record_output", "machines.operate", "quality.rework", "hr.attendance", "payroll.read"] },
   QUALITY_INSPECTOR: { name: "Quality Inspector", landing: "/quality", perms: ["quality.read", "quality.inspect", "quality.rework", "quality.release"] },
   DISPATCH_OFFICER: { name: "Dispatch Officer", landing: "/dispatch", perms: ["dispatch.read", "dispatch.create", "dispatch.confirm", "dispatch.reverse", "orders.read", "quality.read"] },
-  BUYER: { name: "Buyer", landing: "/portal", perms: ["portal.read", "orders.create", "orders.read"] },
+  BUYER: { name: "Buyer", landing: "/buyer/dashboard", perms: ["portal.read", "orders.create", "orders.read"] },
 };
 
 export const DEMO_USERS: DemoUser[] = [
@@ -19,7 +19,7 @@ export const DEMO_USERS: DemoUser[] = [
   { id: "u-operator-dyeing", name: "Kavita Rao (Dyeing Operator)", email: "operator.dyeing@everest.demo", roles: ["MACHINE_OPERATOR"], permissions: ROLE_PERMISSIONS.MACHINE_OPERATOR.perms, landing: "/my-work" },
   { id: "u-inspector", name: "Priya Iyer (Quality Inspector)", email: "inspector@everest.demo", roles: ["QUALITY_INSPECTOR"], permissions: ROLE_PERMISSIONS.QUALITY_INSPECTOR.perms, landing: "/quality" },
   { id: "u-dispatch", name: "Sameer Khan (Dispatch Officer)", email: "dispatch@everest.demo", roles: ["DISPATCH_OFFICER"], permissions: ROLE_PERMISSIONS.DISPATCH_OFFICER.perms, landing: "/dispatch" },
-  { id: "u-buyer", name: "Anita Textiles (Buyer)", email: "buyer@everest.demo", roles: ["BUYER"], permissions: ROLE_PERMISSIONS.BUYER.perms, landing: "/portal", buyerId: "buyer-01" },
+  { id: "u-buyer", name: "Anita Textiles (Buyer)", email: "buyer@everest.demo", roles: ["BUYER"], permissions: ROLE_PERMISSIONS.BUYER.perms, landing: "/buyer/dashboard", buyerId: "buyer-01" },
 ];
 
 export function hasPermission(user: DemoUser | null, permission: Permission): boolean {
@@ -35,7 +35,7 @@ export function hasAllPermissions(user: DemoUser | null, permissions: Permission
 }
 
 export function landingFor(permissions: Permission[]): string {
-  if (permissions.includes("portal.read")) return "/portal";
+  if (permissions.includes("portal.read")) return "/buyer/dashboard";
   if (permissions.includes("users.manage")) return "/admin/users";
   if (permissions.includes("hr.attendance")) return "/hr/attendance";
   if (permissions.includes("finance.read")) return "/finance";
@@ -80,8 +80,8 @@ export const ROLE_NAVIGATION: Record<string, { label: string; items: { label: st
   ],
   DISPATCH_OFFICER: [
     { label: "Logistics", items: [
-      { label: "Dashboard", href: "/dispatch/dashboard", icon: "grid" },
-      { label: "Active Shipments", href: "/dispatch/shipments", icon: "dispatch" }
+      { label: "Fulfillment Dashboard", href: "/dispatch/dashboard", icon: "grid" },
+      { label: "Final QC Scan", href: "/dispatch/scan", icon: "scan" }
     ] }
   ],
   QUALITY_INSPECTOR: [
