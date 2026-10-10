@@ -516,8 +516,8 @@ export function AssignTaskModal({ operatorName, shift, unassignedOps, onClose }:
   };
 
   return (
-    <div className="modal-backdrop">
-      <div className="modal-content" style={{ width: 450 }}>
+    <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", justifyContent: "center", alignItems: "center", backdropFilter: "blur(4px)" }}>
+      <div style={{ background: "var(--color-bg)", padding: 24, borderRadius: 12, width: "90%", maxWidth: 500, maxHeight: "90%", overflow: "auto", position: "relative", border: "4px solid var(--color-text)", boxShadow: "8px 8px 0px rgba(0,0,0,1)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Assign Task to {operatorName}</h2>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "inherit" }}><X size={20}/></button>
