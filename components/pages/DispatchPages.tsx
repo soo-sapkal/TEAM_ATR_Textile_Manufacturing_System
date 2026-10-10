@@ -152,11 +152,32 @@ function NewShipmentPage() {
     const time = new Date(plannedAt);
     if (!Number.isFinite(time.getTime())) { toast("Planned load time is invalid", "Choose a valid local date and time.", "error"); return; }
     if (!hasPermission(user, "dispatch.create")) { toast("Shipment creation is read-only", "This action requires dispatch.create.", "error"); return; }
+    
     setBusy(true);
-    const commandKey = `create-shipment:${orderCode}:${Object.keys(selected).sort().join(",")}:${vehicle.trim()}:${plannedAt}`;
-    const response = await act("create-shipment", { commandKey, orderCode, rollIds: Object.keys(selected), vehicle: vehicle.trim(), plannedAt: time.toISOString() });
-    setBusy(false);
-    if (response.ok && response.reference) router.push(`/dispatch/${encodeURIComponent(response.reference)}`);
+    try {
+      const res = await fetch("/api/dispatch/create-draft", {
+        method: "POST",
+        body: JSON.stringify({
+          orderCode,
+          rollIds: Object.keys(selected),
+          vehicle: vehicle.trim(),
+          plannedAt: time.toISOString(),
+          actor: user?.name
+        })
+      });
+      const data = await res.json();
+      
+      if (data.success && data.reference) {
+        toast("Draft created", "The shipment draft has been saved to the database.", "success");
+        router.push(`/dispatch/${encodeURIComponent(data.reference)}`);
+      } else {
+        toast("Creation failed", data.error, "error");
+      }
+    } catch (err: any) {
+      toast("Error", err.message, "error");
+    } finally {
+      setBusy(false);
+    }
   }
   return <><PageHeader eyebrow="Build a load · allocation" title="New shipment" description="Choose an order, then allocate only rolls in ACCEPTED state. The same-order, exact-unit and available-balance checks are repeated at submit." actions={<LinkButton href="/dispatch" variant="secondary"><ArrowLeft size={14}/> Dispatch desk</LinkButton>} meta={<><Tag>RECORDER · {user?.name}</Tag><Tag>DEMO ONLY</Tag></>} /><div className="two-pane"><form className="stack" onSubmit={submit}><Card title="1 · Choose order and truck"><div className="form-grid"><Field label="Order"><SelectInput value={orderCode} onChange={(event) => changeOrder(event.target.value)}>{orders.map((item) => <option key={item.code} value={item.code}>{item.code} · {item.buyer}</option>)}</SelectInput></Field><Field label="Vehicle / transport reference"><TextInput value={vehicle} onChange={(event) => setVehicle(event.target.value)} required/></Field><Field label="Planned load time"><TextInput type="datetime-local" value={plannedAt} onChange={(event) => setPlannedAt(event.target.value)} required/></Field><Field label="Buyer balance"><TextInput value={order ? formatQty(order.available, order.unit, 1) : "—"} readOnly/></Field></div></Card><Card title="2 · Pick accepted rolls" action={<Tag>{eligible.length} eligible</Tag>}><DataTable headers={["Pick", "Roll", "Colour / lot", "Qty", "Dispatch Qty", "Location", "State"]} rows={eligible.map((roll) => [<input aria-label={`Select ${roll.code}`} type="checkbox" checked={Object.hasOwn(selected, roll.id)} onChange={() => toggle(roll.id, String(roll.qty))} style={{ width: 20, height: 20 }}/>, <Link href={`/rolls/${roll.code}`} className="code">{roll.code}</Link>, `${roll.colour} · ${roll.dyeLot}`, formatQty(roll.qty,roll.unit,1), Object.hasOwn(selected, roll.id) ? <TextInput type="number" step="0.1" max={String(roll.qty)} value={selected[roll.id]} onChange={(e) => updateQty(roll.id, e.target.value)} style={{ width: "100px" }} /> : "—", roll.location, <StatusBadge status={roll.status}/>])} empty={<EmptyState title="No accepted rolls for this order" detail="Complete inspection and create accepted finished stock first."/>}/><div className="info-strip info-strip--warning"><ShieldAlert size={17}/><div><strong>Allocation check</strong><div>{chosen.length} selected · {formatQty(total.toFixed(3),order?.unit ?? "M",1)} · available {order ? formatQty(order.available,order.unit,1) : "—"} · {withinBalance ? "within balance" : "exceeds available"}</div></div></div></Card><div className="form-actions"><span className="field__hint">Only the live backend can issue durable shipment/invoice codes.</span><Button type="submit" size="lg" disabled={busy || !selectionValid || !hasPermission(user,"dispatch.create")}>{busy ? "Creating…" : "Create draft shipment"} <ArrowRight size={16}/></Button></div></form><aside className="stack sticky-summary"><Card title="Load preview"><Kicker>Selected rolls</Kicker><strong style={{ display: "block", marginTop: 8, font: "900 28px var(--font-display)" }}>{chosen.length}</strong><div className="num" style={{ fontSize: 19, marginTop: 3 }}>{formatQty(total.toFixed(3),order?.unit ?? "M",1)}</div><div className="stack-sm" style={{ marginTop: 12 }}>{chosen.map((roll) => <div className="permission-note" key={roll.id}><Link className="code" href={`/rolls/${roll.code}`}>{roll.code}</Link><span className="cell-secondary">{roll.orderCode} · {formatQty(selected[roll.id] || "0",roll.unit,1)} {Number(selected[roll.id]) < Number(roll.qty) && "(Partial)"}</span></div>)}</div>{chosen.length === 0 && <p className="cell-secondary">Select rolls to prepare a load.</p>}</Card><Card title="Policy notes"><InfoStrip tone="info">The server should create the shipment and reserve rolls atomically, with idempotency, state checks, same-order validation, unit checks, and remaining-tolerance check. For partial dispatch, remaining quantity is returned as an offcut.</InfoStrip><InfoStrip tone="warning">After creation, reload before confirmation. The list of reserved rolls must still match this draft; don&apos;t optimistically show dispatched status.</InfoStrip></Card></aside></div></>;
 }
@@ -176,7 +197,32 @@ function ShipmentPage({ id }: { id: string }) {
   const shipmentId = shipment.id;
   const rolls = (shipment.rollIds ?? []).map((rollId) => data.rolls.find((roll) => roll.id === rollId)).filter((roll): roll is FabricRoll => Boolean(roll));
   const valid = rolls.length === shipment.rolls && rolls.length > 0 && rolls.every((roll) => roll.status === "RESERVED" && roll.orderCode === shipment.orderCode && roll.unit === shipment.unit);
-  async function confirm() { if (!valid) { toast("Load no longer matches", "Refresh the reserved roll list and correct the draft before confirming.", "error"); return; } if (!hasPermission(user, "dispatch.confirm")) { toast("Dispatch confirmation is read-only", "This action requires dispatch.confirm.", "error"); return; } setBusy(true); await act("confirm-dispatch", { commandKey: `confirm-dispatch:${shipmentId}`, shipmentId }); setBusy(false); }
+  async function confirm() { 
+    if (!valid) { toast("Load no longer matches", "Refresh the reserved roll list and correct the draft before confirming.", "error"); return; } 
+    if (!hasPermission(user, "dispatch.confirm")) { toast("Dispatch confirmation is read-only", "This action requires dispatch.confirm.", "error"); return; } 
+    
+    setBusy(true); 
+    try {
+      const res = await fetch("/api/dispatch/confirm", {
+        method: "POST",
+        body: JSON.stringify({
+          shipmentId: shipmentId,
+          actor: user?.name
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast("Shipment Confirmed", `Shipment ${shipment.code} has been dispatched.`, "success");
+        window.location.reload();
+      } else {
+        toast("Confirmation failed", data.error, "error");
+      }
+    } catch (err: any) {
+      toast("Error", err.message, "error");
+    } finally {
+      setBusy(false); 
+    }
+  }
   return <><PageHeader eyebrow="Load the truck · dispatch confirmation" title={shipment.code} description={`${shipment.orderCode} · ${shipment.buyer}`} actions={<><LinkButton href="/dispatch" variant="secondary"><ArrowLeft size={14}/> Dispatch desk</LinkButton><LinkButton href={`/print/dispatch/${shipment.id}`} variant="quiet"><Printer size={14}/> Print note</LinkButton></>} meta={<><StatusBadge status={shipment.status}/><Tag>{formatQty(shipment.qty,shipment.unit,1)}</Tag></>} /><div className="two-pane"><div className="stack"><Card title="Reserved load list"><DataTable headers={["Roll", "Order", "Colour / dye", "Quantity", "Current state"]} rows={rolls.map((roll) => [<Link href={`/rolls/${roll.code}`} className="code">{roll.code}</Link>, roll.orderCode, `${roll.colour} · ${roll.dyeLot}`, formatQty(roll.qty,roll.unit,1), <StatusBadge status={roll.status}/>])} empty={<EmptyState title="No roll membership attached" detail="This historic sample shipment has no selected rolls; create a new load to exercise the validated flow." action={<LinkButton href="/dispatch/new">Build a shipment</LinkButton>}/>} /></Card><Card title="Confirmation"><InfoStrip tone={shipment.status === "DRAFT" ? "warning" : "success"} title={shipment.status === "DRAFT" ? "Draft — not dispatched." : "Dispatch state recorded."}>{shipment.status === "DRAFT" ? "The final confirmation revalidates that every listed roll is reserved, accepted earlier, belongs to this order, and retains the same unit." : "The preview staged this state in memory only. A non-statutory demo invoice reference is not an external record."}</InfoStrip><div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>{shipment.status === "DRAFT" && <Button size="lg" disabled={busy || !valid || !hasPermission(user,"dispatch.confirm")} onClick={confirm}><Truck size={17}/>{busy ? "Confirming…" : "Confirm dispatch · demo"}</Button>}{shipment.status === "DISPATCHED" && <StatusBadge status="DISPATCHED" label="Confirmed · demo state"/>}<span className="field__hint">Demo invoice reference: {shipment.invoice ?? "not issued"}</span>{hasPermission(user, "finance.read") ? <span className="field__hint">Amount: {shipment.amount ? formatMoney(shipment.amount) : "not calculated"}</span> : <span className="field__hint">Amount restricted · finance.read required</span>}</div></Card></div><aside className="stack sticky-summary"><Card title="Truck and shipment"><DataTable headers={["Field", "Value"]} rows={[["Planned",formatDateTime(shipment.plannedAt)],["Vehicle",shipment.vehicle || "Not recorded"],["Order",<Link href={`/orders/${encodeURIComponent(shipment.orderCode)}`}>{shipment.orderCode}</Link>],["Roll count",String(shipment.rolls)],["Load quantity",formatQty(shipment.qty,shipment.unit,1)],["Invoice",shipment.invoice ?? "Not issued"],["Total amount",hasPermission(user, "finance.read") ? (shipment.amount ? formatMoney(shipment.amount) : "Basis unavailable") : "Restricted · finance.read"]]}/></Card><Thread orientation="vertical" stages={[{key:"accepted",label:"Roll accepted by QC",state:shipment.status === "DRAFT" ? "done" : "done"},{key:"reserved",label:"Reserved to shipment",state:shipment.status === "DRAFT" ? "current" : "done"},{key:"dispatch",label:"Truck departed",state:shipment.status === "DISPATCHED" ? "done" : "todo"},{key:"invoice",label:"Invoice linked",state:shipment.invoice ? "done" : "todo"}]}/></aside></div></>;
 }
 
