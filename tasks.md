@@ -96,3 +96,32 @@ Implement the following specific features for each role to support the factory's
 
 4. **Quality Inspector additions:**
    - **Rework Workflow:** Update the quality inspection page so that if a dyed roll fails quality, there is an explicit "Send to Rework" option that routes the material back to the dyeing or weaving queue, rather than just Pass/Fail.
+
+---
+
+# Task 6 - Uday: Buyer Dashboard Redesign
+
+**Context & Requirements:**
+The current `DashboardPage.tsx` acts as a catch-all dashboard that conditionally hides internal data from the Buyer. Now that roles have separated dashboards (`app/(roles)/buyer/dashboard/page.tsx`), the Buyer needs a dedicated B2B Customer Portal interface, completely free of internal factory metrics.
+
+**What to Remove (Currently visible but inappropriate for Buyers):**
+1. **Global Order Data:** Remove "Orders to keep in view" and "Orders at risk" cards that show all factory orders. Buyers must strictly see only their own data.
+2. **Shift & Factory Meta-data:** Remove headers showing "SHIFT B", "Asia/Kolkata", and "The mill, at a glance".
+3. **Internal Terminology:** Remove any references to "Operations", "Cost basis", "Alerts", or "Needs a person".
+4. **Global Production States:** Remove yarn availability and machine status (to protect capacity secrets).
+
+**What to Add (New features for the Buyer Dashboard):**
+1. **Personalized Welcome & Account Summary:**
+   - A welcoming header (e.g., *"Welcome back, Anita Textiles."*) and account manager contact info.
+2. **Customer-Specific KPIs (Stat Cards):**
+   - **Active Orders:** Count of orders currently in progress.
+   - **Ready for Dispatch:** Orders completed and waiting for logistics.
+   - **Outstanding Balance:** Current financial ledger balance or pending invoices.
+3. **"Track My Orders" Widget:**
+   - A visual progress list of *only their* orders with customer-friendly progress bars (e.g., "In Production -> 60% Complete").
+   - Display clear Estimated Delivery Dates (EDD).
+4. **Quick Actions Panel:**
+   - Prominent **"Place New Order"** button.
+   - Links to "View Product/Yarn Catalog" and "Download Account Statement".
+5. **Recent Shipments & Logistics:**
+   - A section showing recently dispatched trucks containing their goods, along with links to download Dispatch Manifests or Invoices.
