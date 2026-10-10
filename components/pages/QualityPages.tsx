@@ -146,12 +146,23 @@ function InspectionPage({ code }: { code: string }) {
     if (!parse.success) { toast("Inspection needs more detail", parse.error.issues[0]?.message ?? "Check the form.", "error"); return; }
     if (!eligible) { toast("Roll is not eligible for inspection", "Refresh its state before trying another decision.", "error"); return; }
     setBusy(true);
-    const response = await act("inspect-roll", { rollId, result, defect, reason, location, evidenceCount, commandKey: `inspection-${rollId}-${inspectionRevision}` });
-    setBusy(false);
-    if (response.ok) {
-      setInspectionRevision((current) => current + 1);
-      const next = data.rolls.find((candidate) => candidate.id !== rollId && ["AWAITING_INSPECTION", "REINSPECTION_REQUIRED"].includes(candidate.status));
-      router.push(next ? `/quality/inspect/${encodeURIComponent(next.code)}` : "/quality");
+    try {
+      const res = await fetch("/api/quality/inspect", {
+        method: "POST",
+        body: JSON.stringify({ rollId, result, defect, reason, location, evidenceCount, actor: user?.name })
+      });
+      const dataRes = await res.json();
+      if (dataRes.success) {
+        setInspectionRevision((current) => current + 1);
+        const next = data.rolls.find((candidate) => candidate.id !== rollId && ["AWAITING_INSPECTION", "REINSPECTION_REQUIRED"].includes(candidate.status));
+        router.push(next ? `/quality/inspect/${encodeURIComponent(next.code)}` : "/quality");
+      } else {
+        toast("Error", dataRes.error, "error");
+      }
+    } catch (err: any) {
+      toast("Error", err.message, "error");
+    } finally {
+      setBusy(false);
     }
   }
   return <><PageHeader eyebrow="Quality · disposition record" title={`Inspect ${roll.code}`} description={`${roll.orderCode} · ${roll.buyer} · ${formatQty(roll.qty, roll.unit, 0)} · ${roll.colour}`} actions={<LinkButton href="/quality" variant="secondary"><ArrowLeft size={14}/> Queue</LinkButton>} meta={<><StatusBadge status={roll.status}/>{roll.priorFailure && <StatusBadge status="REWORK_REQUIRED" label="Prior failure"/>}</>} />
@@ -166,15 +177,28 @@ function InspectionPage({ code }: { code: string }) {
 }
 
 function ReworkPage() {
-  const { data, act, user } = useDemo();
+  const { data, toast, user } = useDemo();
   const rows = data.rolls.filter((roll) => ["REWORK_REQUIRED","REWORK_IN_PROGRESS"].includes(roll.status));
   const [reasonById, setReasonById] = useState<Record<string,string>>({});
   const [revisionById, setRevisionById] = useState<Record<string,number>>({});
   const canRework = hasPermission(user, "quality.rework");
   async function runRework(rollId: string, action: "start-rework" | "complete-rework", reason: string) {
     const revision = revisionById[rollId] ?? 1;
-    const response = await act(action, { rollId, reason, commandKey: `${action}-${rollId}-${revision}` });
-    if (response.ok) setRevisionById((current) => ({ ...current, [rollId]: revision + 1 }));
+    try {
+      const res = await fetch("/api/quality/rework", {
+        method: "POST",
+        body: JSON.stringify({ rollId, action, reason, actor: user?.name })
+      });
+      const dataRes = await res.json();
+      if (dataRes.success) {
+        setRevisionById((current) => ({ ...current, [rollId]: revision + 1 }));
+        window.location.reload();
+      } else {
+        toast("Error", dataRes.error, "error");
+      }
+    } catch (err: any) {
+      toast("Error", err.message, "error");
+    }
   }
   return <><PageHeader eyebrow="Corrective work · preserve failure history" title="Rework" description="A rework order is not a clean pass. Track original defect, repair evidence, and the re-inspection that follows." actions={<LinkButton href="/quality" variant="secondary"><ArrowLeft size={14}/> Quality queue</LinkButton>} /><Card title="Rework orders" action={<Tag>{rows.length} open</Tag>}><DataTable headers={["Roll", "Order", "Defect", "State", "Original failure", "Action"]} rows={rows.map((roll) => [<Link className="code" href={`/quality/rolls/${roll.code}`}>{roll.code}</Link>, roll.orderCode, roll.defect ?? "Defect required", <StatusBadge status={roll.status}/>, <span className="cell-secondary">Retained in passport</span>, <div className="stack-sm"><TextInput aria-label={`Rework note for ${roll.code}`} placeholder={roll.status === "REWORK_REQUIRED" ? "Work instruction · 5+ chars" : "Repair close-out · 5+ chars"} value={reasonById[roll.id] ?? ""} onChange={(event) => setReasonById((map) => ({ ...map, [roll.id]: event.target.value }))}/><Button size="sm" disabled={!canRework || (reasonById[roll.id] ?? "").trim().length < 5} onClick={() => { const reason = reasonById[roll.id] ?? ""; void runRework(roll.id, roll.status === "REWORK_REQUIRED" ? "start-rework" : "complete-rework", reason); }}>{canRework ? (roll.status === "REWORK_REQUIRED" ? "Start rework" : "Send to re-inspection") : "quality.rework required"}</Button></div>])} empty={<EmptyState title="No open rework" detail="Rework and failure history remain visible on the roll passport."/>}/></Card><InfoStrip tone="warning">A roll returns to inspection after the repair operation. The original failure must remain part of every downstream passport view.</InfoStrip></>;
 }

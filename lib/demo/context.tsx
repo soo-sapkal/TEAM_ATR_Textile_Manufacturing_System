@@ -149,6 +149,24 @@ export function DemoProvider({ children }: { children: ReactNode }) {
         }
       })
       .catch(console.error);
+
+    fetch("/api/quality")
+      .then((r) => r.json())
+      .then((res) => {
+        if (res.success && res.data) {
+          setData((prev) => {
+            const next = {
+              ...prev,
+              inspectionEvents: res.data.inspectionEvents || prev.inspectionEvents,
+              reworkEvents: res.data.reworkEvents || prev.reworkEvents,
+              rolls: res.data.rolls || prev.rolls
+            };
+            dataRef.current = next;
+            return next;
+          });
+        }
+      })
+      .catch(console.error);
   }, []);
 
   const toast = useCallback((title: string, detail?: string, tone: ToastMessage["tone"] = "info") => {
