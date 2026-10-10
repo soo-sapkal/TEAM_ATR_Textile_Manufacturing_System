@@ -26,3 +26,30 @@
    - The modal should display all the necessary order information.
    - **UI Requirement:** Use a tabbed interface (multiple tabs) within the modal to organize the order information cleanly.
    - **Important Constraint:** Do **NOT** delete the existing order-specific page. The separate page should remain intact and functional; just change the behavior of the order link on the `/production` page to trigger the modal instead.
+
+---
+
+# Task 3 - GJ: Final Goods Inventory (Rolls Page Redesign)
+
+**Context & Requirements:**
+Redesign the `/rolls` page from scratch into a **Final Goods Inventory** dashboard. Shift the focus to high-level available inventory while still providing roll-level details.
+
+1. **Page Title & KPIs:**
+   - Update the title to "Checked Final Goods" or "Final Goods Inventory".
+   - Add KPI summary cards at the top (e.g., Total Available Quantity, Total Rolls in Stock, Pending Dispatch).
+
+2. **Product-Wise Aggregation (Core Feature):**
+   - Group the inventory by Product/SKU so users can see aggregate availability per fabric type.
+   - For each product, show the total quantity available, total roll count, and a quality breakdown (e.g., Grade A vs. Grade B).
+   - Implement an interactive UI (like an accordion) where clicking a product expands to reveal the specific rolls of that type.
+
+3. **Detailed Rolls List:**
+   - Provide a granular table of individual physical rolls for warehouse operations.
+   - Required columns: Roll ID / Barcode, Product Name, Quantity, Quality Grade, Location, Status (Available/Allocated/Dispatched), and Date Produced.
+
+4. **Features & Actions:**
+   - Add robust Search (by Roll ID or Product Name) and Filters (by Quality Grade and Status).
+   - Add action buttons per roll (e.g., "Allocate to Order", "Print Label", "Change Status").
+
+5. **Design System:**
+   - Follow the **Neobrutalist** aesthetic used across this branch (e.g., thick black borders, stark contrasting colors, sharp drop shadows).
