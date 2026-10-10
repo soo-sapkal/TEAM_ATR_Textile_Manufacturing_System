@@ -30,18 +30,48 @@ export default function LoginPage() {
     router.push(destination);
   }
 
-  function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const user = DEMO_USERS.find((candidate) => candidate.email.toLowerCase() === email.trim().toLowerCase());
-    if (!user || password !== "demo") {
-      setError("Email or password is wrong. In this preview, use a demo role below or the password “demo” with a demo email.");
-      return;
-    }
-    setError("");
     setBusy(true);
-    loginAs(user.id);
-    const next = new URLSearchParams(window.location.search).get("next");
-    router.push(next && next.startsWith("/") && !next.startsWith("//") ? next : user.landing);
+    setError("");
+
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), password })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Login failed.");
+        setBusy(false);
+        return;
+      }
+
+      const roleMap: Record<string, string> = {
+        "OWNER": "owner",
+        "SUPERVISOR": "supervisor",
+        "MACHINE_OPERATOR": "operator",
+        "QUALITY_INSPECTOR": "quality",
+        "DISPATCH_OFFICER": "dispatch",
+        "BUYER": "buyer"
+      };
+
+      const folder = roleMap[data.user.role] || "dashboard";
+      const next = new URLSearchParams(window.location.search).get("next");
+      
+      // Give the system a tiny bit of time to set the cookie before navigating
+      setTimeout(() => {
+        router.push(next && next.startsWith("/") && !next.startsWith("//") ? next : `/${folder}/dashboard`);
+        // Refresh context
+        window.location.href = `/${folder}/dashboard`;
+      }, 300);
+      
+    } catch (err) {
+      setError("An unexpected error occurred.");
+      setBusy(false);
+    }
   }
 
   return <main className="login-wrap">

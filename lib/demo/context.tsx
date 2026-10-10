@@ -63,12 +63,21 @@ export function DemoProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<DemoData>(cloneSeed);
   const dataRef = useRef(data);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
-  const sessionUserId = useSyncExternalStore(subscribeSession, getSessionUserId, getServerSessionUserId);
   const ready = useSyncExternalStore(subscribeReady, getClientReady, getServerReady);
-  const user = useMemo(() => DEMO_USERS.find((candidate) => candidate.id === sessionUserId) ?? null, [sessionUserId]);
+  const [user, setUser] = useState<DemoUser | null>(null);
 
   useEffect(() => {
-    // Supabase interaction disabled, falling back to local seed data
+    fetch("/api/auth/me")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.user) {
+          const perms = DEMO_USERS.find(u => u.roles.includes(d.user.roles[0]))?.permissions || [];
+          setUser({ ...d.user, permissions: perms, landing: "/" });
+        } else {
+          setUser(null);
+        }
+      })
+      .catch(() => setUser(null));
   }, []);
 
   const toast = useCallback((title: string, detail?: string, tone: ToastMessage["tone"] = "info") => {
@@ -85,9 +94,9 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     toast(`Signed in as ${selected.name}`, "Demo session only — records are not sent to a mill system.", "success");
   }, [toast]);
 
-  const logout = useCallback(() => {
-    window.sessionStorage.removeItem(STORAGE_KEY);
-    window.dispatchEvent(new Event(SESSION_CHANGE_EVENT));
+  const logout = useCallback(async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    setUser(null);
   }, []);
 
   const act = useCallback(async (kind: string, payload: Record<string, unknown> = {}): Promise<DemoActionResult> => {
