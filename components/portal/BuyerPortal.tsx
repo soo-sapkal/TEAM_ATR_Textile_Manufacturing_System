@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, BadgeCheck } from "lucide-react";
+import { ArrowLeft, ArrowRight, BadgeCheck, Wallet } from "lucide-react";
 import { useDemo } from "@/lib/demo/context";
-import { formatDate, formatQty } from "@/lib/domain/format";
-import { BrandMark, Card, EmptyState, InfoStrip, LinkButton, PageHeader, StatusBadge, Tag, Thread } from "@/components/ui/primitives";
+import { formatDate, formatQty, formatMoney } from "@/lib/domain/format";
+import { BrandMark, Card, EmptyState, InfoStrip, LinkButton, PageHeader, StatusBadge, Tag, Thread, DataTable } from "@/components/ui/primitives";
 import type { Order } from "@/lib/domain/types";
 
 export function BuyerPortalShell({ children }: { children: React.ReactNode }) {
@@ -25,7 +25,7 @@ export function BuyerPortalShell({ children }: { children: React.ReactNode }) {
 export function BuyerOrdersPage() {
   const { data, user } = useDemo();
   const orders = data.orders.filter((order) => order.buyerId === user?.buyerId);
-  return <main className="portal-main"><PageHeader eyebrow="Buyer account · order tracker" title="Your orders, on the thread." description="A clear milestone view for your purchase orders. Quantity is shown in the ordered unit; internal costs and mill-only notes stay private." meta={<Tag>MY ACCOUNT · {orders.length} ORDERS</Tag>}/>{orders.map((order) => <BuyerOrderCard order={order} key={order.id}/>) }{orders.length===0 && <EmptyState title="No orders on this buyer account" detail="Contact your mill representative if an order should be linked."/>}<InfoStrip tone="info">This demo restricts orders to the buyer ID on the signed-in demo persona. A live API must enforce the same filter server-side.</InfoStrip></main>;
+  return <main className="portal-main"><PageHeader eyebrow="Buyer account · order tracker" title="Your orders, on the thread." description="A clear milestone view for your purchase orders. Quantity is shown in the ordered unit; internal costs and mill-only notes stay private." meta={<Tag>MY ACCOUNT · {orders.length} ORDERS</Tag>} actions={<LinkButton href="/portal/invoices" variant="secondary"><Wallet size={14}/> Invoices & Payments</LinkButton>}/>{orders.map((order) => <BuyerOrderCard order={order} key={order.id}/>) }{orders.length===0 && <EmptyState title="No orders on this buyer account" detail="Contact your mill representative if an order should be linked."/>}<InfoStrip tone="info">This demo restricts orders to the buyer ID on the signed-in demo persona. A live API must enforce the same filter server-side.</InfoStrip></main>;
 }
 
 export function BuyerOrderDetailPage({ id }: { id: string }) {
@@ -47,3 +47,52 @@ function BuyerOrderCard({ order }: { order: Order }) {
   return <article className="portal-order"><div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 12, flexWrap: "wrap" }}><div><span className="kicker">{order.code}</span><h2>{order.product} · {order.colour}</h2><p>Due {formatDate(order.due)} · {formatQty(order.ordered,order.unit,0)}</p></div><StatusBadge status={order.displayStatus}/></div><Thread className="portal-thread" stages={[{key:"confirmed",label:"Confirmed",state:stageIndex>=1?"done":"current"},{key:"production",label:"Production",state:stageIndex>=2?"done":stageIndex===1?"current":"todo"},{key:"quality",label:"Quality",state:stageIndex>=3?"done":stageIndex===2?"current":"todo"},{key:"dispatch",label:"Dispatch",state:stageIndex>=4?"done":stageIndex===3?"current":"todo"}]}/><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 15, flexWrap: "wrap" }}><span className="cell-secondary">{formatQty(order.accepted,order.unit,0)} accepted · {formatQty(order.dispatched,order.unit,0)} dispatched</span><Link href={`/portal/orders/${order.id}`} className="btn btn--primary btn--sm">View tracker <ArrowRight size={12}/></Link></div></article>;
 }
 function buyerStatus(order: Order, stageIndex: number): string { if (order.displayStatus === "READY_FOR_DISPATCH") return "Quality passed; accepted rolls are being prepared to ship."; if (stageIndex >= 2) return "Your order is on the production floor."; if (order.status === "CONFIRMED") return "Your order is confirmed; production planning is next."; return "The mill is preparing your order."; }
+
+export function BuyerInvoicesPage() {
+  const { data, user } = useDemo();
+  const invoices = (data.invoices || []).filter(i => i.buyerName === user?.name);
+  const payments = data.payments || [];
+  
+  const myPayments = payments.filter(p => invoices.some(i => i.id === p.invoiceId));
+  
+  return (
+    <main className="portal-main">
+      <PageHeader 
+        eyebrow="Buyer account · finance" 
+        title="Invoices & Payments" 
+        description="View your open invoices and track cleared payments. This ledger is automatically synchronized with the mill's AR system." 
+        meta={<Tag>{invoices.filter(i => i.status !== "PAID").length} OPEN INVOICES</Tag>} 
+        actions={<LinkButton href="/portal" variant="secondary"><ArrowLeft size={14}/> My Orders</LinkButton>}
+      />
+      
+      <div className="stack">
+        <Card title="Your Invoices">
+          <DataTable 
+            headers={["Invoice ID", "Order ID", "Due Date", "Amount Due", "Status"]} 
+            rows={invoices.map(inv => [
+              <span className="code" title={inv.id}>{inv.id.substring(0,8)}</span>,
+              <span className="code" title={inv.orderId}>{inv.orderId.substring(0,8)}</span>,
+              formatDate(inv.dueDate),
+              formatMoney(inv.amountDue, "INR"),
+              <StatusBadge status={inv.status}/>
+            ])}
+            empty={<EmptyState title="No invoices found" detail="You currently have no billed invoices on your account."/>}
+          />
+        </Card>
+        
+        <Card title="Payment History">
+          <DataTable 
+            headers={["Date", "Reference", "Method", "Amount Paid"]} 
+            rows={myPayments.map(p => [
+              formatDate(p.paymentDate),
+              p.referenceNo,
+              p.paymentMethod,
+              formatMoney(p.amountPaid, "INR")
+            ])}
+            empty={<EmptyState title="No payments recorded" detail="No cleared payments were found on your account."/>}
+          />
+        </Card>
+      </div>
+    </main>
+  );
+}
