@@ -86,7 +86,8 @@ export function DemoProvider({ children }: { children: ReactNode }) {
   const clientReady = useSyncExternalStore(subscribeReady, getClientReady, getServerReady);
   const [user, setUser] = useState<DemoUser | null>(null);
   const [isAuthLoaded, setIsAuthLoaded] = useState(false);
-  const ready = clientReady && isAuthLoaded;
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
+  const ready = clientReady && isAuthLoaded && isDataLoaded;
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -102,125 +103,59 @@ export function DemoProvider({ children }: { children: ReactNode }) {
       .catch(() => setUser(null))
       .finally(() => setIsAuthLoaded(true));
 
-    fetch("/api/orders")
-      .then((r) => r.json())
-      .then((res) => {
-        if (res.success && res.data) {
-          setData((prev) => {
-            const next = { ...prev, orders: res.data };
-            dataRef.current = next;
-            return next;
-          });
+    Promise.all([
+      fetch("/api/orders").then(r => r.json()),
+      fetch("/api/inventory").then(r => r.json()),
+      fetch("/api/dispatch").then(r => r.json()),
+      fetch("/api/production").then(r => r.json()),
+      fetch("/api/quality").then(r => r.json()),
+      fetch("/api/finance/receivables").then(r => r.json()),
+      fetch("/api/finance/payables").then(r => r.json())
+    ]).then(([ordersRes, inventoryRes, dispatchRes, productionRes, qualityRes, receivablesRes, payablesRes]) => {
+      setData((prev) => {
+        const next = { ...prev };
+        
+        if (ordersRes.success && ordersRes.data) next.orders = ordersRes.data;
+        
+        if (inventoryRes.success && inventoryRes.data) {
+          if (inventoryRes.data.yarnItems) next.yarnItems = inventoryRes.data.yarnItems;
+          if (inventoryRes.data.yarnBatches) next.yarnBatches = inventoryRes.data.yarnBatches;
+          if (inventoryRes.data.yarnMovements) next.yarnMovements = inventoryRes.data.yarnMovements;
         }
-      })
-      .catch(console.error);
 
-    fetch("/api/inventory")
-      .then((r) => r.json())
-      .then((res) => {
-        if (res.success && res.data) {
-          setData((prev) => {
-            const next = { 
-              ...prev, 
-              yarnItems: res.data.yarnItems || prev.yarnItems,
-              yarnBatches: res.data.yarnBatches || prev.yarnBatches,
-              yarnMovements: res.data.yarnMovements || prev.yarnMovements
-            };
-            dataRef.current = next;
-            return next;
-          });
+        if (dispatchRes.success && dispatchRes.data) {
+          if (dispatchRes.data.shipments) next.shipments = dispatchRes.data.shipments;
+          if (dispatchRes.data.dispatchEvents) next.dispatchEvents = dispatchRes.data.dispatchEvents;
+          if (dispatchRes.data.rolls) next.rolls = dispatchRes.data.rolls;
         }
-      })
-      .catch(console.error);
 
-    fetch("/api/dispatch")
-      .then((r) => r.json())
-      .then((res) => {
-        if (res.success && res.data) {
-          setData((prev) => {
-            const next = { 
-              ...prev, 
-              shipments: res.data.shipments || prev.shipments,
-              dispatchEvents: res.data.dispatchEvents || prev.dispatchEvents,
-              rolls: res.data.rolls || prev.rolls
-            };
-            dataRef.current = next;
-            return next;
-          });
+        if (productionRes.success && productionRes.data) {
+          if (productionRes.data.machines) next.machines = productionRes.data.machines;
+          if (productionRes.data.operations) next.operations = productionRes.data.operations;
+          if (productionRes.data.outputEvents) next.outputEvents = productionRes.data.outputEvents;
+          if (productionRes.data.machineEvents) next.machineEvents = productionRes.data.machineEvents;
         }
-      })
-      .catch(console.error);
 
-    fetch("/api/production")
-      .then((r) => r.json())
-      .then((res) => {
-        if (res.success && res.data) {
-          setData((prev) => {
-            const next = { 
-              ...prev, 
-              machines: res.data.machines || prev.machines,
-              operations: res.data.operations || prev.operations,
-              outputEvents: res.data.outputEvents || prev.outputEvents,
-              machineEvents: res.data.machineEvents || prev.machineEvents
-            };
-            dataRef.current = next;
-            return next;
-          });
+        if (qualityRes.success && qualityRes.data) {
+          if (qualityRes.data.inspectionEvents) next.inspectionEvents = qualityRes.data.inspectionEvents;
+          if (qualityRes.data.reworkEvents) next.reworkEvents = qualityRes.data.reworkEvents;
+          if (qualityRes.data.rolls) next.rolls = qualityRes.data.rolls;
         }
-      })
-      .catch(console.error);
 
-    fetch("/api/quality")
-      .then((r) => r.json())
-      .then((res) => {
-        if (res.success && res.data) {
-          setData((prev) => {
-            const next = {
-              ...prev,
-              inspectionEvents: res.data.inspectionEvents || prev.inspectionEvents,
-              reworkEvents: res.data.reworkEvents || prev.reworkEvents,
-              rolls: res.data.rolls || prev.rolls
-            };
-            dataRef.current = next;
-            return next;
-          });
+        if (receivablesRes.data) {
+          if (receivablesRes.data.invoices) next.invoices = receivablesRes.data.invoices;
+          if (receivablesRes.data.payments) next.payments = receivablesRes.data.payments;
         }
-      })
-      .catch(console.error);
 
-    fetch("/api/finance/receivables")
-      .then((r) => r.json())
-      .then((res) => {
-        if (res.data) {
-          setData((prev) => {
-            const next = {
-              ...prev,
-              invoices: res.data.invoices || prev.invoices,
-              payments: res.data.payments || prev.payments
-            };
-            dataRef.current = next;
-            return next;
-          });
+        if (payablesRes.data) {
+          if (payablesRes.data.supplierBills) next.supplierBills = payablesRes.data.supplierBills;
+          if (payablesRes.data.supplierPayments) next.supplierPayments = payablesRes.data.supplierPayments;
         }
-      })
-      .catch(console.error);
 
-    fetch("/api/finance/payables")
-      .then((r) => r.json())
-      .then((res) => {
-        if (res.data) {
-          setData((prev) => {
-            const next = {
-              ...prev,
-              supplierBills: res.data.supplierBills || prev.supplierBills,
-              supplierPayments: res.data.supplierPayments || prev.supplierPayments
-            };
-            dataRef.current = next;
-            return next;
-          });
-        }
-      })
-      .catch(console.error);
+        dataRef.current = next;
+        return next;
+      });
+    }).catch(console.error).finally(() => setIsDataLoaded(true));
   }, []);
 
   const toast = useCallback((title: string, detail?: string, tone: ToastMessage["tone"] = "info") => {

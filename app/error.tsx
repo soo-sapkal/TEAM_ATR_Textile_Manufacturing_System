@@ -8,7 +8,7 @@ export default function ErrorBoundary({ error, reset }: { error: Error & { diges
     console.error("Loom Ledger route error", error.digest ?? "unclassified");
   }, [error]);
   return <main className="permission-denied" role="alert">
-    <PageHeader eyebrow="Page error" title="This workbench could not be opened." description="The page failed to render. Your demo state has not been submitted to a mill system." />
+    <PageHeader eyebrow="Page error" title="An error occurred while loading this page." description="Please try refreshing the page or contact support if the problem persists." />
     <Button onClick={() => reset()}>Try this page again</Button>
   </main>;
 }
