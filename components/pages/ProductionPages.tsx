@@ -234,27 +234,111 @@ function OperationCard({ operation, onOrderClick }: { operation: Operation; onOr
 
 function MyWorkPage() {
   const { data, user, toast } = useDemo();
-  const assignedName = user?.name.split(" (")[0];
-  const ops = data.operations.filter((operation) => {
-    return Boolean(assignedName && operation.operators.includes(assignedName)) && !["COMPLETED", "CANCELLED"].includes(operation.status);
+  const [liveOps, setLiveOps] = useState<import('@/lib/domain/types').Operation[]>([]);
+  const [loadingTasks, setLoadingTasks] = useState(true);
+  const assignedName = user?.name.split(' (')[0];
+
+  useEffect(() => {
+    setLoadingTasks(true);
+    fetch('/api/production')
+      .then(r => r.json())
+      .then(res => {
+        if (res.success && res.data?.operations) {
+          setLiveOps(res.data.operations);
+        } else {
+          setLiveOps(data.operations);
+        }
+      })
+      .catch(() => setLiveOps(data.operations))
+      .finally(() => setLoadingTasks(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const ops = liveOps.filter((operation) => {
+    return Boolean(assignedName && Array.isArray(operation.operators) && operation.operators.includes(assignedName)) && !["COMPLETED", "CANCELLED"].includes(operation.status);
   });
-  return <><PageHeader eyebrow="Floor view · assigned work" title={`Your work, ${user?.name.split(" ")[0] ?? "operator"}.`} description="Large-touch shift actions. No cost fields, no back-office clutter, and no pretend optimistic save." meta={<><Tag>TODAY'S SHIFT TASKS</Tag></>} /><div className="info-strip info-strip--warning"><ShieldAlert size={18}/><div><strong>Floor mode</strong><div>Native scroll and feedback-only motion. This list contains only operations assigned to your demo profile that you need to complete in this shift only.</div></div></div><div className="page-grid">{ops.map((operation) => { const machine = data.machines.find((candidate) => candidate.code === operation.machineCode); return <Card className="col-6" key={operation.id} title={operation.code} action={<StatusBadge status={operation.status}/>}><div className="stage-card__meta"><span>Order {operation.orderCode}</span><span>{operation.stage}</span></div><div style={{ font: "900 26px var(--font-display)", margin: "11px 0" }}>{formatQty(operation.good, operation.unit, 1)} <span className="field__hint">good output</span></div><div className="stage-card__meta"><span>{operation.machineCode ?? "Machine unassigned"}</span><span>{operation.shift ?? "No shift"}</span></div><Meter value={operation.good} total={operation.target} label="Shift target"/><div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}><LinkButton href={`/production/operations/${operation.id}`} variant="primary" size="lg"><Activity size={17}/> Log Production Details</LinkButton>{machine && <LinkButton href={`/machines/${machine.id}`} variant="secondary" size="lg"><Wrench size={17}/> Machine</LinkButton>}{machine && <Button variant="quiet" size="lg" onClick={async () => {
-  try {
-    const res = await fetch("/api/production/machine-status", {
-      method: "POST",
-      body: JSON.stringify({ machineId: machine.id, status: "BREAKDOWN", reason: "Operator reported breakdown from Floor View", actor: user?.name })
-    });
-    const outcome = await res.json();
-    if (outcome.success) {
-      toast("Breakdown Reported", `Supervisor alerted for ${machine.code} breakdown.`, "error");
-      setTimeout(() => window.location.reload(), 1500);
-    } else {
-      toast("Error", outcome.error, "error");
-    }
-  } catch(err: any) {
-    toast("Error", err.message, "error");
-  }
-}} style={{ color: "var(--madder)", border: "2px solid var(--madder)", background: "#fff" }}><ShieldAlert size={17} /> Report Breakdown</Button>}</div></Card>; })}{ops.length === 0 && <div className="col-12"><EmptyState title="No operation is assigned to this user" detail="The demo list is intentionally not filled with every live operation. A planner or administrator must assign a real shift task before work appears here." action={<LinkButton href="/production" variant="secondary">Open production board</LinkButton>}/></div>}</div></>;
+
+  return (
+    <>
+      <PageHeader
+        eyebrow="Floor view · active tasks"
+        title={`Your work, ${user?.name.split(" ")[0] ?? "operator"}.`}
+        description="Tap a task to log output. All actions save directly to the database."
+        meta={<><Tag>TODAY'S SHIFT TASKS</Tag></>}
+      />
+      {loadingTasks && (
+        <div className="info-strip">
+          <Activity size={18}/>
+          <div><strong>Loading tasks…</strong><div>Fetching your latest assignments from the database.</div></div>
+        </div>
+      )}
+      {!loadingTasks && ops.length === 0 && (
+        <div className="page-grid">
+          <div className="col-12">
+            <EmptyState
+              title="No tasks assigned to you yet"
+              detail="Your supervisor will assign an operation to your account from the Plan and Assign page. Check back after your shift briefing."
+              action={<LinkButton href="/production" variant="secondary">Open production board</LinkButton>}
+            />
+          </div>
+        </div>
+      )}
+      <div className="page-grid">
+        {ops.map((operation) => {
+          const machine = data.machines.find((candidate) => candidate.code === operation.machineCode);
+          return (
+            <Card className="col-6" key={operation.id} title={operation.code} action={<StatusBadge status={operation.status}/>}>
+              <div className="stage-card__meta">
+                <span>Order {operation.orderCode}</span>
+                <span>{operation.stage}</span>
+              </div>
+              <div style={{ font: "900 26px var(--font-display)", margin: "11px 0" }}>
+                {formatQty(operation.good, operation.unit, 1)} <span className="field__hint">good output</span>
+              </div>
+              <div className="stage-card__meta">
+                <span>{operation.machineCode ?? "Machine unassigned"}</span>
+                <span>{operation.shift ?? "No shift"}</span>
+              </div>
+              <Meter value={operation.good} total={operation.target} label="Shift target"/>
+              <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
+                <LinkButton href={`/production/operations/${operation.id}`} variant="primary" size="lg">
+                  <Activity size={17}/> Log Production Details
+                </LinkButton>
+                {machine && (
+                  <LinkButton href={`/machines/${machine.id}`} variant="secondary" size="lg">
+                    <Wrench size={17}/> Machine
+                  </LinkButton>
+                )}
+                {machine && (
+                  <Button variant="quiet" size="lg" style={{ color: "var(--madder)", border: "2px solid var(--madder)", background: "#fff" }}
+                    onClick={async () => {
+                      try {
+                        const res = await fetch("/api/production/machine-status", {
+                          method: "POST",
+                          body: JSON.stringify({ machineId: machine.id, status: "BREAKDOWN", reason: "Operator reported breakdown from Floor View", actor: user?.name })
+                        });
+                        const outcome = await res.json();
+                        if (outcome.success) {
+                          toast("Breakdown Reported", `Supervisor alerted for ${machine.code} breakdown.`, "error");
+                          setTimeout(() => window.location.reload(), 1500);
+                        } else {
+                          toast("Error", outcome.error, "error");
+                        }
+                      } catch(err: any) {
+                        toast("Error", err.message, "error");
+                      }
+                    }}
+                  >
+                    <ShieldAlert size={17} /> Report Breakdown
+                  </Button>
+                )}
+              </div>
+            </Card>
+          );
+        })}
+      </div>
+    </>
+  );
 }
 
 function PlanPage({ id }: { id: string }) {

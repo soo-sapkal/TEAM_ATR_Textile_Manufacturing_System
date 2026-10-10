@@ -43,6 +43,20 @@ export interface Order {
   remaining: string;
   atRisk: boolean;
   materialShortage: boolean;
+  materialReadiness?: {
+    canStart: boolean;
+    hasShortage: boolean;
+    deficitSummary: string;
+    details: Array<{
+      yarnCode: string;
+      yarnName: string;
+      unit: string;
+      requiredQty: number;
+      availableQty: number;
+      deficitQty: number;
+      isShort: boolean;
+    }>;
+  };
   hasQualityHold: boolean;
   currency: string;
   revenue: string;

@@ -27,6 +27,8 @@ export function DashboardPage() {
   const acceptedRolls = canQuality || canDispatch ? data.rolls.filter((roll) => roll.status === "ACCEPTED") : [];
   const acceptedByUnit = [...new Set(acceptedRolls.map((roll) => roll.unit))].map((unit) => ({ unit, rolls: acceptedRolls.filter((roll) => roll.unit === unit), quantity: acceptedRolls.filter((roll) => roll.unit === unit).reduce((sum, roll) => sum.plus(roll.qty), new Decimal(0)) }));
   const availableYarnByUnit = canInventory ? [...new Set(data.yarnItems.map((item) => item.unit))].map((unit) => ({ unit, total: data.yarnItems.filter((item) => item.unit === unit).reduce((sum, item) => sum.plus(item.available), new Decimal(0)) })) : [];
+  const criticalYarnItems = canInventory ? data.yarnItems.filter((item) => new Decimal(item.available).lt(item.reorderLevel)) : [];
+  const orderShortages = canOrders ? data.orders.filter((order) => order.materialShortage) : [];
   const fastPaths = [
     hasPermission(user, "inventory.receive") && { href: "/inventory/receive", label: "Receive yarn", icon: Boxes },
     hasPermission(user, "production.read") && { href: "/production", label: "Open production board", icon: Activity },
@@ -38,18 +40,42 @@ export function DashboardPage() {
     <PageHeader
       eyebrow={`Shift book · ${today}`}
       title="The mill, at a glance."
-      description="One working view across yarn, machines, quality, buyer orders, and today's exceptions. Sections appear only when your permission profile can read them."
+      description="One working view across raw material yarn, machines, quality, buyer orders, and today's exceptions. Real-time safety thresholds protect production schedules."
       actions={<>
         {canQuality && <LinkButton href="/scan" variant="secondary"><ClipboardCheck size={15}/> Find a roll</LinkButton>}
         {hasPermission(user, "orders.create") && <LinkButton href="/orders/new" variant="primary">New order <ArrowRight size={15}/></LinkButton>}
       </>}
-      meta={<><Tag>SHIFT B · 14:00–22:00</Tag><Tag>ASIA/KOLKATA</Tag><Tag>LAST SYNC · DEMO DATA</Tag></>}
+      meta={<><Tag>SHIFT B · 14:00–22:00</Tag><Tag>ASIA/KOLKATA</Tag><Tag>LIVE SYNC · SUPABASE</Tag></>}
     />
+    
+    {criticalYarnItems.length > 0 && (
+      <div style={{ marginBottom: 16 }}>
+        <InfoStrip tone="danger" title={`🚨 Raw Material Alert: ${criticalYarnItems.length} yarn item${criticalYarnItems.length > 1 ? "s are" : " is"} critically low!`}>
+          {criticalYarnItems.map(item => `${item.description} (${item.code}): only ${formatQty(item.available, item.unit, 1)} available (Safety threshold: ${formatQty(item.reorderLevel, item.unit, 1)})`).join(" · ")}
+          {" — "}
+          <Link href="/inventory" style={{ textDecoration: "underline", fontWeight: 700 }}>
+            Inspect Yarn Store & Reorder Raw Material →
+          </Link>
+        </InfoStrip>
+      </div>
+    )}
+
+    {orderShortages.length > 0 && (
+      <div style={{ marginBottom: 16 }}>
+        <InfoStrip tone="warning" title={`⚠️ Incoming Orders Blocked by Material Shortage (${orderShortages.length} order${orderShortages.length > 1 ? "s" : ""})`}>
+          {orderShortages.map(o => `${o.code} (${o.buyer})`).join(", ")} cannot start until required yarn is received.{" "}
+          <Link href="/orders" style={{ textDecoration: "underline", fontWeight: 700 }}>
+            View Order Material Readiness →
+          </Link>
+        </InfoStrip>
+      </div>
+    )}
+
     <div className="stat-grid">
+      <StatCard label="Raw material items" value={canInventory ? `${data.yarnItems.length} yarns` : "Restricted"} detail={canInventory ? `${criticalYarnItems.length} critical low · ${data.yarnItems.length - criticalYarnItems.length} safe` : "inventory.read required"} icon={Boxes} tone={criticalYarnItems.length ? "madder" : "neem"} href={canInventory ? "/inventory" : undefined}/>
       <StatCard label="Machines running" value={canMachine ? `${running} / ${data.machines.length}` : "Restricted"} detail={canMachine ? `${breakdowns.length} breakdown · ${data.machines.filter((machine) => machine.status === "IDLE").length} idle` : "production.read required"} icon={Factory} tone="indigo" href={canMachine ? "/machines" : undefined}/>
       <StatCard label="Rolls to inspect" value={canQuality ? waiting.length : "Restricted"} detail={canQuality ? "Includes re-inspection queue" : "quality.read required"} icon={ClipboardCheck} tone="turmeric" href={canQuality ? "/quality" : undefined}/>
-      <StatCard label="Ready to dispatch" value={canDispatch ? readyOrders.length : "Restricted"} detail={canDispatch ? `${acceptedRolls.length} accepted rolls in FG` : "dispatch.read required"} icon={Truck} tone="neem" href={canDispatch ? "/dispatch" : undefined}/>
-      <StatCard label="Orders at risk" value={canOrders ? atRisk.length : "Restricted"} detail={canOrders ? atRisk.map((order) => order.code).join(" · ") || "No urgent date risk" : "orders.read required"} icon={AlertTriangle} tone={atRisk.length ? "madder" : "cotton"} href={canOrders ? "/orders" : undefined}/>
+      <StatCard label="Orders material check" value={canOrders ? `${data.orders.length - orderShortages.length} / ${data.orders.length} ready` : "Restricted"} detail={canOrders ? (orderShortages.length ? `${orderShortages.length} blocked by shortage` : "All orders yarn ready") : "orders.read required"} icon={AlertTriangle} tone={orderShortages.length ? "madder" : "neem"} href={canOrders ? "/orders" : undefined}/>
     </div>
     {breakdowns.length > 0 && <InfoStrip tone="danger" title="A machine is down; check shift impact.">{breakdowns.map((machine) => `${machine.code} · ${machine.downtimeMinutes} min`).join(" / ")} · <Link href="/machines">Open machine board</Link></InfoStrip>}
     <div className="page-grid">
@@ -63,17 +89,32 @@ export function DashboardPage() {
           </section>;
         })}</div>
       </Card>}
-      {canInventory && <Card className="col-4" title="Stock signal" action={<Link href="/inventory" className="btn btn--quiet btn--sm">Yarn room <ArrowRight size={12}/></Link>}>
-        <Kicker>Available · grouped by unit</Kicker>{availableYarnByUnit.map(({ unit, total }) => <div key={unit} className="stock-signal__total">{formatQty(total.toFixed(3), unit, 1)}</div>)}<p className="cell-secondary">Reserved yarn stays separate. Held lots are not treated as available.</p>
-        <div className="stack-sm" style={{ marginTop: 14 }}>{data.yarnItems.map((item) => { const low = new Decimal(item.available).lt(item.reorderLevel); return <div key={item.id} className="stock-signal__item"><span className="code">{item.code}</span><span className="num">{formatQty(item.available, item.unit, 1)}</span>{low && <StatusBadge status="HIGH" label="Reorder"/>}</div>; })}</div>
+      {canInventory && <Card className="col-4" title="Raw material stock signals" action={<Link href="/inventory" className="btn btn--quiet btn--sm">Yarn room <ArrowRight size={12}/></Link>}>
+        <Kicker>Available · grouped by unit</Kicker>{availableYarnByUnit.map(({ unit, total }) => <div key={unit} className="stock-signal__total">{formatQty(total.toFixed(3), unit, 1)}</div>)}<p className="cell-secondary">Reserved yarn stays separate. Safety reorder thresholds tracked per item.</p>
+        <div className="stack-sm" style={{ marginTop: 14 }}>{data.yarnItems.map((item) => { 
+          const low = new Decimal(item.available).lt(item.reorderLevel); 
+          const approaching = !low && new Decimal(item.available).lte(new Decimal(item.reorderLevel).mul(1.25));
+          const pct = Math.min(100, Math.round((Number(item.available) / (Number(item.reorderLevel) || 1)) * 100));
+          return <div key={item.id} className="stock-signal__item" style={{ flexDirection: "column", alignItems: "stretch", gap: 3, padding: "7px 0", borderBottom: "1px solid #ebe6d9" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div><strong className="code">{item.code}</strong><span className="cell-secondary" style={{ marginLeft: 6, fontSize: 11 }}>{item.description}</span></div>
+              {low ? <StatusBadge status="HIGH" label="Critical Low"/> : approaching ? <StatusBadge status="PENDING" label="Approaching"/> : <StatusBadge status="AVAILABLE" label="Healthy"/>}
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+              <span className="num" style={{ color: low ? "var(--madder)" : approaching ? "var(--turmeric)" : "inherit", fontWeight: 700 }}>{formatQty(item.available, item.unit, 1)} avail</span>
+              <span className="cell-secondary">Min safety: {formatQty(item.reorderLevel, item.unit, 1)} ({pct}%)</span>
+            </div>
+          </div>; 
+        })}</div>
       </Card>}
       {canOrders && <Card className="col-7" title="Orders to keep in view" action={<Link href="/orders" className="btn btn--quiet btn--sm">All orders <ArrowRight size={12}/></Link>}>
-        {openOrders.map((order) => <div className="order-row" key={order.id}><div><Link className="cell-primary code" href={`/orders/${order.id}`}>{order.code}</Link><span className="order-row__buyer">{order.buyer}</span></div><div><span className="cell-secondary">Due {formatDate(order.due)}</span><StatusBadge status={order.priority}/></div><Meter value={order.produced} total={order.ordered} unit={order.unit} label="Produced" showNumbers={false} tone={order.atRisk ? "madder" : "indigo"}/><div><StatusBadge status={order.displayStatus}/>{order.atRisk && <span className="cell-secondary" style={{ color: "var(--madder)" }}>Date at risk</span>}</div></div>)}
+        {openOrders.map((order) => <div className="order-row" key={order.id}><div><Link className="cell-primary code" href={`/orders/${order.id}`}>{order.code}</Link><span className="order-row__buyer">{order.buyer}</span></div><div><span className="cell-secondary">Due {formatDate(order.due)}</span><StatusBadge status={order.priority}/></div><Meter value={order.produced} total={order.ordered} unit={order.unit} label="Produced" showNumbers={false} tone={order.atRisk ? "madder" : "indigo"}/><div><StatusBadge status={order.displayStatus}/>{order.materialShortage ? <span className="cell-secondary" style={{ color: "var(--madder)", fontWeight: 700 }}>Yarn short</span> : order.atRisk ? <span className="cell-secondary" style={{ color: "var(--madder)" }}>Date at risk</span> : <span className="cell-secondary" style={{ color: "var(--neem)" }}>Yarn ready</span>}</div></div>)}
       </Card>}
       {canMachine && <Card className="col-5" title="Now needs a person" action={canAlerts ? <Link href="/alerts" className="btn btn--quiet btn--sm">Alert list <ArrowRight size={12}/></Link> : undefined}>
         <div className="stack-sm">
+          {criticalYarnItems.map((item) => <Link href="/inventory" key={item.id} className="info-strip info-strip--danger" style={{ margin: 0 }}><Boxes size={17}/><div><strong>Raw Material Low · {item.code}</strong><div>{item.description}: {formatQty(item.available, item.unit, 1)} available (Threshold: {formatQty(item.reorderLevel, item.unit, 1)}). Reorder raw yarn.</div></div></Link>)}
           {breakdowns.map((machine) => <Link href={`/machines/${machine.id}`} key={machine.id} className="info-strip info-strip--danger" style={{ margin: 0 }}><Wrench size={17}/><div><strong>{machine.code} breakdown · {machine.downtimeMinutes} min</strong><div>Assigned {machine.orderCode} · reason and maintenance close-out needed.</div></div></Link>)}
-          {atRisk.map((order) => <Link href={`/orders/${order.id}`} key={order.id} className="info-strip info-strip--warning" style={{ margin: 0 }}><Clock3 size={17}/><div><strong>{order.code} · due {formatDate(order.due)}</strong><div>Material readiness is below the amount required for plan release.</div></div></Link>)}
+          {orderShortages.map((order) => <Link href={`/orders/${order.id}`} key={order.id} className="info-strip info-strip--warning" style={{ margin: 0 }}><Clock3 size={17}/><div><strong>{order.code} · Yarn Shortage</strong><div>{order.materialReadiness?.deficitSummary || "Material readiness is below the amount required for plan release."}</div></div></Link>)}
           {waiting.length > 0 && <Link href="/quality" className="info-strip" style={{ margin: 0 }}><ClipboardCheck size={17}/><div><strong>{waiting.length} rolls in inspection queue</strong><div>Record result, defect, and disposition before finished stock is eligible.</div></div></Link>}
           {!breakdowns.length && !atRisk.length && !waiting.length && <p>No open exception visible to this permission profile in the demo set.</p>}
         </div>
