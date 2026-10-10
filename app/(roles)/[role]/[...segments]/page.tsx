@@ -11,6 +11,7 @@ import { ProductionRoute } from "@/components/pages/ProductionPages";
 import { QualityRoute } from "@/components/pages/QualityPages";
 import { MasterDataRoute } from "@/components/pages/MasterDataPages";
 import { BuyerDashboardPage } from "@/components/pages/BuyerDashboardPage";
+import { FactoryFlowPage } from "@/components/pages/FactoryFlowPage";
 
 export default async function RoleScopedPage({ params }: { params: Promise<{ role: string; segments: string[] }> }) {
   const { role, segments } = await params;
@@ -35,6 +36,7 @@ export default async function RoleScopedPage({ params }: { params: Promise<{ rol
   else if (path.startsWith("/hr/payroll/")) content = <BackOfficeRoute path={path} id={id}/>;
   else if (path.startsWith("/finance") || path.startsWith("/hr") || path.startsWith("/reports") || path === "/verify" || path === "/alerts" || path === "/notifications" || path === "/tasks") content = <BackOfficeRoute path={path} id={id}/>;
   else if (path.startsWith("/admin")) content = <AdminRoute path={path} id={id}/>;
+  else if (path === "/factory-flow") content = <FactoryFlowPage/>;
   else notFound();
 
   return content;

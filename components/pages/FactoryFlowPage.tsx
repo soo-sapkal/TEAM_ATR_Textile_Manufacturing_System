@@ -8,7 +8,7 @@ import { hasAnyPermission } from "@/lib/auth/permissions";
 import { useState } from "react";
 import { Play, Pause, RotateCcw, FastForward } from "lucide-react";
 
-export default function FactoryFlowPage() {
+export function FactoryFlowPage() {
   const { data, user } = useDemo();
   const [isSimulation, setIsSimulation] = useState(true);
   const [speed, setSpeed] = useState(1);
