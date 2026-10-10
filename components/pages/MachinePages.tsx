@@ -30,7 +30,18 @@ function MachineBoard() {
     <div className="page-grid">{filtered.map((machine) => <article className={`machine-tile machine-tile--${machine.status} col-4`} key={machine.id}>
       <div className="machine-tile__top"><div><span className="machine-tile__code">{machine.code}</span><h3>{machine.name}</h3></div><StatusBadge status={machine.status}/></div>
       <div className="machine-tile__meta"><span>{machine.stage}</span><span>{machine.location}</span></div>
-      <div style={{ marginTop: 13 }}><span className="cell-secondary">Current operation / order</span><strong className="cell-primary">{machine.orderCode ?? "Unassigned"}</strong></div>
+      <div style={{ marginTop: 13 }}>
+        <span className="cell-secondary">Current operation / order</span>
+        {machine.orderCode ? (() => {
+          const order = data.orders.find(o => o.code === machine.orderCode);
+          return (
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              <strong className="cell-primary">{machine.orderCode}</strong>
+              <span className="cell-secondary" style={{ fontSize: 12 }}>{order ? `${order.product} · ${order.colour}` : "Product unknown"}</span>
+            </div>
+          );
+        })() : <strong className="cell-primary">Unassigned</strong>}
+      </div>
       <div className="page-grid" style={{ marginTop: 10, gap: 8 }}><div className="col-6"><span className="cell-secondary">Good today</span><strong className="num">{formatQty(machine.todayGood, machine.unit, 0)}</strong></div><div className="col-6"><span className="cell-secondary">Downtime</span><strong className="num">{machine.downtimeMinutes} min</strong></div></div>
       <div style={{ marginTop: 13, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}><span className="field__hint">{hasPermission(user, "finance.read") ? (machine.costPerHour ? `${formatMoney(machine.costPerHour)}/hr` : "Hourly rate missing") : "Rate · finance only"}</span><Link href={`/machines/${machine.id}`} className="btn btn--secondary btn--sm">Open machine <ArrowRight size={12}/></Link></div>
     </article>)}</div>
@@ -113,10 +124,21 @@ function MachineDetail({ id }: { id: string }) {
     <div className="two-pane">
       <div className="stack">
         <Card title="Current assignment"><div className="page-grid">
-          <div className="col-6"><span className="cell-secondary">Order</span><strong className="cell-primary">{machine.orderCode ?? "No order"}</strong></div>
+          {(() => {
+            const order = machine.orderCode ? data.orders.find(o => o.code === machine.orderCode) : null;
+            return (
+              <div className="col-12" style={{ marginBottom: 12 }}>
+                <span className="cell-secondary">Order & Product</span>
+                <div style={{ display: "flex", flexDirection: "column" }}>
+                  <strong className="cell-primary">{machine.orderCode ?? "No order"}</strong>
+                  {order && <span className="cell-secondary" style={{ fontSize: 13, marginTop: 4 }}>{order.product} · {order.colour}</span>}
+                </div>
+              </div>
+            );
+          })()}
           <div className="col-6"><span className="cell-secondary">Operation</span><strong className="cell-primary">{operation?.code ?? "No operation"}</strong></div>
           <div className="col-6"><span className="cell-secondary">Shift</span><strong className="cell-primary">{operation?.shift ?? "No shift"}</strong></div>
-          <div className="col-6"><span className="cell-secondary">Operators</span><strong className="cell-primary">{operation?.operators.join(" · ") || "Unassigned"}</strong></div>
+          <div className="col-12" style={{ marginTop: 12 }}><span className="cell-secondary">Operators</span><strong className="cell-primary">{operation?.operators.join(" · ") || "Unassigned"}</strong></div>
         </div>{operation && <LinkButton href={`/production/operations/${operation.id}`} variant="secondary">Open operation <ArrowRight size={14}/></LinkButton>}</Card>
 
         <Card title="Allowed machine actions"><div className="stack-sm">
