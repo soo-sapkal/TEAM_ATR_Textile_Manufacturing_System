@@ -302,8 +302,12 @@ export function applyDemoCommand(
       operation.machineCode = machine.code;
       machine.operationId = operation.id;
       machine.orderCode = operation.orderCode;
+      
+      if (text(payload.shift)) operation.shift = text(payload.shift);
+      if (text(payload.operator)) operation.operators = [text(payload.operator)];
+
       markCommand(next, commandKey);
-      return result(next, true, `${operation.code} is assigned to ${machine.code} in demo state; no controller was contacted.`, machine.id);
+      return result(next, true, `${operation.code} is assigned to ${machine.code} with operator in demo state; no controller was contacted.`, machine.id);
     }
 
     case "operation-transition": {

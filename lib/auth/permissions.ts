@@ -58,6 +58,7 @@ export const NAV_SECTIONS: { label: string; items: { label: string; href: string
     { label: "Yarn inventory", href: "/inventory", icon: "inventory", any: ["inventory.read"] },
     { label: "Receive yarn", href: "/inventory/receive", icon: "receive", any: ["inventory.receive"] },
     { label: "Production", href: "/production", icon: "production", any: ["production.read"] },
+    { label: "Factory flow", href: "/factory-flow", icon: "grid", any: ["production.plan", "finance.read"] },
     { label: "Machines", href: "/machines", icon: "machine", any: ["production.read"] },
     { label: "Quality checks", href: "/quality", icon: "quality", any: ["quality.read"] },
     { label: "Rolls", href: "/rolls", icon: "roll", any: ["quality.read"] },

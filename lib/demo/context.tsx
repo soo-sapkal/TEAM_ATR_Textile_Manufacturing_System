@@ -80,6 +80,14 @@ export function DemoProvider({ children }: { children: ReactNode }) {
           if (dbData.operations && dbData.operations.length > 0) merged.operations = dbData.operations;
           if (dbData.yarnItems && dbData.yarnItems.length > 0) merged.yarnItems = dbData.yarnItems;
           if (dbData.yarnBatches && dbData.yarnBatches.length > 0) merged.yarnBatches = dbData.yarnBatches;
+          
+          if (dbData.yarnMovements !== undefined) merged.yarnMovements = dbData.yarnMovements;
+          if (dbData.outputEvents !== undefined) merged.outputEvents = dbData.outputEvents;
+          if (dbData.inspectionEvents !== undefined) merged.inspectionEvents = dbData.inspectionEvents;
+          if (dbData.reworkEvents !== undefined) merged.reworkEvents = dbData.reworkEvents;
+          if (dbData.dispatchEvents !== undefined) merged.dispatchEvents = dbData.dispatchEvents;
+          if (dbData.machineEvents !== undefined) merged.machineEvents = dbData.machineEvents;
+
           dataRef.current = merged;
           return merged;
         });
