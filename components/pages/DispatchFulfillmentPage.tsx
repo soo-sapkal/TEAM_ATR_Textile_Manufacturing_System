@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import { RoleLink as Link } from "@/components/ui/primitives";
 import Decimal from "decimal.js";
 import {
   ArrowLeft,

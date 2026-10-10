@@ -1,4 +1,7 @@
-import Link from "next/link";
+"use client";
+
+import NextLink from "next/link";
+import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import Decimal from "decimal.js";
 import { ArrowDownRight, ArrowUpRight, Check, CircleAlert, CircleCheck, CircleDot, CircleX, Minus, type LucideIcon } from "lucide-react";
@@ -22,8 +25,23 @@ export function Button({ children, variant = "primary", size = "md", className, 
   return <button className={cx("btn", `btn--${variant}`, `btn--${size}`, className)} disabled={disabled} {...props}>{children}</button>;
 }
 
+export function RoleLink({ href, children, className, ...props }: any) {
+  const path = usePathname();
+  let finalHref = href;
+  if (typeof href === "string" && href.startsWith("/") && path) {
+    const match = path.match(/^\/(owner|supervisor|operator|quality|dispatch|buyer|admin)(\/|$)/);
+    if (match) {
+      const rolePrefix = match[1];
+      if (!href.startsWith(`/${rolePrefix}`)) {
+        finalHref = href === "/" ? `/${rolePrefix}` : `/${rolePrefix}${href}`;
+      }
+    }
+  }
+  return <NextLink href={finalHref} className={className} {...props}>{children}</NextLink>;
+}
+
 export function LinkButton({ href, children, variant = "secondary", size = "md", className }: { href: string; children: ReactNode; variant?: "primary" | "secondary" | "quiet" | "danger" | "light"; size?: "sm" | "md" | "lg"; className?: string }) {
-  return <Link className={cx("btn", `btn--${variant}`, `btn--${size}`, className)} href={href}>{children}</Link>;
+  return <RoleLink className={cx("btn", `btn--${variant}`, `btn--${size}`, className)} href={href}>{children}</RoleLink>;
 }
 
 const badgeMap: Record<string, string> = {
@@ -71,7 +89,7 @@ export function SectionHeading({ title, detail, action }: { title: string; detai
 
 export function StatCard({ label, value, detail, icon: Icon, tone = "cotton", href, trend }: { label: string; value: ReactNode; detail?: string; icon?: LucideIcon; tone?: "cotton" | "turmeric" | "madder" | "neem" | "indigo"; href?: string; trend?: "up" | "down" }) {
   const body = <><div className="stat-card__top"><span>{label}</span>{Icon && <Icon size={18} aria-hidden="true" />}</div><strong>{value}</strong><div className="stat-card__bottom">{trend === "up" && <ArrowUpRight size={14} />}{trend === "down" && <ArrowDownRight size={14} />}{detail && <span>{detail}</span>}</div></>;
-  return href ? <Link href={href} className={cx("stat-card", `stat-card--${tone}`)}>{body}</Link> : <div className={cx("stat-card", `stat-card--${tone}`)}>{body}</div>;
+  return href ? <RoleLink href={href} className={cx("stat-card", `stat-card--${tone}`)}>{body}</RoleLink> : <div className={cx("stat-card", `stat-card--${tone}`)}>{body}</div>;
 }
 
 export function Meter({ value, total, unit, label, tone = "indigo", showNumbers = true }: { value: string | number; total: string | number; unit?: string; label?: string; tone?: "indigo" | "neem" | "turmeric" | "madder"; showNumbers?: boolean }) {

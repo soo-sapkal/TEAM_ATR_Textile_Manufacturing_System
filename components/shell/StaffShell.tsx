@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { RoleLink as Link } from "@/components/ui/primitives";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, Bell, ChevronDown, LogOut, Search, ScanLine } from "lucide-react";

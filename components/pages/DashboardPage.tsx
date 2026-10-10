@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { RoleLink as Link } from "@/components/ui/primitives";
 import Decimal from "decimal.js";
 import { Activity, AlertTriangle, ArrowRight, Boxes, ClipboardCheck, Clock3, Factory, PackageCheck, Truck, Wrench } from "lucide-react";
 import { hasAnyPermission, hasPermission } from "@/lib/auth/permissions";

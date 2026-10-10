@@ -1,18 +1,30 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase/client";
+import { cookies } from "next/headers";
+import { Pool } from "pg";
+import { verifyToken } from "@/lib/auth/auth";
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL || "postgresql://postgres.xaqbisnaetgsjiortzgi:sohamsapkal@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres",
+});
 
 export async function POST(req: Request) {
   try {
+    const cookieStore = await cookies();
+    const token = cookieStore.get("auth_token")?.value;
+    if (!token) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    
+    const payload = await verifyToken(token) as any;
+    if (!payload || !payload.permissions?.includes("production.execute")) {
+      return NextResponse.json({ success: false, error: "Forbidden: Requires production.execute permission" }, { status: 403 });
+    }
+
     const body = await req.json();
     const { operationId, action, reason, actor } = body;
 
-    const { data: operation, error: opErr } = await supabase
-      .from("operations")
-      .select("*")
-      .eq("id", operationId)
-      .single();
+    const opRes = await pool.query("SELECT * FROM operations WHERE id = $1", [operationId]);
+    const operation = opRes.rows[0];
 
-    if (opErr || !operation) throw new Error("Operation not found");
+    if (!operation) throw new Error("Operation not found");
 
     let newState = operation.status;
     let machineState = null;
@@ -35,25 +47,16 @@ export async function POST(req: Request) {
     }
 
     // Update Operation
-    const { error: updateOpErr } = await supabase
-      .from("operations")
-      .update({ status: newState })
-      .eq("id", operationId);
-
-    if (updateOpErr) throw updateOpErr;
+    await pool.query("UPDATE operations SET status = $1 WHERE id = $2", [newState, operationId]);
 
     // Update Machine if assigned
     if (operation.machine_code && machineState) {
-      const { error: updateMachineErr } = await supabase
-        .from("machines")
-        .update({ status: machineState })
-        .eq("code", operation.machine_code);
-        
-      if (updateMachineErr) throw updateMachineErr;
+      await pool.query("UPDATE machines SET status = $1 WHERE code = $2", [machineState, operation.machine_code]);
     }
 
     return NextResponse.json({ success: true, status: newState });
   } catch (error: any) {
+    console.error("Operation transition error:", error);
     return NextResponse.json({ success: false, error: error.message }, { status: 400 });
   }
 }

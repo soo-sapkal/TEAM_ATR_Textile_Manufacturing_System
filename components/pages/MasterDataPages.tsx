@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import Link from "next/link";
+import { RoleLink as Link } from "@/components/ui/primitives";
 import { ArrowLeft, ArrowRight, Save, Plus, Trash2, Box, Beaker, FilePlus2 } from "lucide-react";
 import { PageHeader, Card, DataTable, Button, TextInput, TextArea, SelectInput, Field, StatusBadge, EmptyState, InfoStrip, LinkButton } from "@/components/ui/primitives";
 import { useDemo } from "@/lib/demo/context";

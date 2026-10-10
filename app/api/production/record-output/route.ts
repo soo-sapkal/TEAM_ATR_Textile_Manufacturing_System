@@ -1,86 +1,73 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase/client";
+import { cookies } from "next/headers";
+import { Pool } from "pg";
+import { verifyToken } from "@/lib/auth/auth";
 import Decimal from "decimal.js";
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL || "postgresql://postgres.xaqbisnaetgsjiortzgi:sohamsapkal@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres",
+});
 
 export async function POST(req: Request) {
   try {
+    const cookieStore = await cookies();
+    const token = cookieStore.get("auth_token")?.value;
+    if (!token) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    
+    const payload = await verifyToken(token) as any;
+    if (!payload || !payload.permissions?.includes("production.execute")) {
+      return NextResponse.json({ success: false, error: "Forbidden: Requires production.execute permission" }, { status: 403 });
+    }
+
     const body = await req.json();
     const { operationId, good, waste, reject, rollQty, actor } = body;
 
-    const { data: operation, error: opErr } = await supabase
-      .from("operations")
-      .select("*")
-      .eq("id", operationId)
-      .single();
+    const opRes = await pool.query("SELECT * FROM operations WHERE id = $1", [operationId]);
+    const operation = opRes.rows[0];
 
-    if (opErr || !operation) throw new Error("Operation not found");
+    if (!operation) throw new Error("Operation not found");
 
     const parsedGood = new Decimal(good || 0);
     const parsedWaste = new Decimal(waste || 0);
     const parsedReject = new Decimal(reject || 0);
     
     // Create output event
-    const { error: eventErr } = await supabase.from("output_events").insert({
-      id: crypto.randomUUID(),
-      code: `OUT-EVT-${Math.floor(Date.now() / 1000)}`,
-      operation_id: operationId,
-      kind: "GOOD",
-      quantity: parsedGood.toNumber(),
-      unit: operation.unit,
-      actor: actor || "System",
-      recorded_at: new Date().toISOString()
-    });
-    
-    if (eventErr) throw eventErr;
+    await pool.query(
+      "INSERT INTO output_events (id, code, operation_id, kind, quantity, unit, actor, recorded_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+      [crypto.randomUUID(), `OUT-EVT-${Math.floor(Date.now() / 1000)}`, operationId, "GOOD", parsedGood.toNumber(), operation.unit, actor || "System", new Date().toISOString()]
+    );
 
     if (parsedWaste.gt(0)) {
-      await supabase.from("output_events").insert({
-        id: crypto.randomUUID(),
-        code: `OUT-WST-${Math.floor(Date.now() / 1000)}`,
-        operation_id: operationId,
-        kind: "WASTE",
-        quantity: parsedWaste.toNumber(),
-        unit: operation.unit,
-        actor: actor || "System",
-        recorded_at: new Date().toISOString()
-      });
+      await pool.query(
+        "INSERT INTO output_events (id, code, operation_id, kind, quantity, unit, actor, recorded_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        [crypto.randomUUID(), `OUT-WST-${Math.floor(Date.now() / 1000)}`, operationId, "WASTE", parsedWaste.toNumber(), operation.unit, actor || "System", new Date().toISOString()]
+      );
     }
 
     if (parsedReject.gt(0)) {
-      await supabase.from("output_events").insert({
-        id: crypto.randomUUID(),
-        code: `OUT-REJ-${Math.floor(Date.now() / 1000)}`,
-        operation_id: operationId,
-        kind: "REJECT",
-        quantity: parsedReject.toNumber(),
-        unit: operation.unit,
-        actor: actor || "System",
-        recorded_at: new Date().toISOString()
-      });
+      await pool.query(
+        "INSERT INTO output_events (id, code, operation_id, kind, quantity, unit, actor, recorded_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        [crypto.randomUUID(), `OUT-REJ-${Math.floor(Date.now() / 1000)}`, operationId, "REJECT", parsedReject.toNumber(), operation.unit, actor || "System", new Date().toISOString()]
+      );
     }
 
-    // Optionally update operation produced stats if you added columns for that (not strictly required if derived)
+    // Update cumulative operation totals
+    await pool.query(
+      "UPDATE operations SET good = good + $1, waste = waste + $2, reject = reject + $3 WHERE id = $4",
+      [parsedGood.toNumber(), parsedWaste.toNumber(), parsedReject.toNumber(), operationId]
+    );
 
     // Handle roll creation if rollQty is provided and operation is WEAVING
     if (rollQty && operation.stage === "WEAVING" && parsedGood.gt(0)) {
-      await supabase.from("fabric_rolls").insert({
-        id: crypto.randomUUID(),
-        code: `ROLL-W-${Math.floor(Math.random() * 10000)}`,
-        order_code: operation.order_code,
-        product_code: "P-W-FABRIC",
-        colour: "Raw",
-        dye_lot: "N/A",
-        qty: parsedGood.toNumber(),
-        unit: "M",
-        location: "Finished Goods Bay A",
-        status: "PENDING_INSPECTION",
-        machine_code: operation.machine_code,
-        recorded_at: new Date().toISOString()
-      });
+      await pool.query(
+        "INSERT INTO fabric_rolls (id, code, order_code, product_code, colour, dye_lot, qty, unit, location, status, machine_code, recorded_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+        [crypto.randomUUID(), `ROLL-W-${Math.floor(Math.random() * 10000)}`, operation.order_code, "P-W-FABRIC", "Raw", "N/A", parsedGood.toNumber(), "M", "Finished Goods Bay A", "PENDING_INSPECTION", operation.machine_code, new Date().toISOString()]
+      );
     }
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
+    console.error("Record output error:", error);
     return NextResponse.json({ success: false, error: error.message }, { status: 400 });
   }
 }

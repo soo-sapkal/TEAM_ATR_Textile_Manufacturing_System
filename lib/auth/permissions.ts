@@ -106,38 +106,38 @@ export const UNIVERSAL_NAVIGATION = [
 
 export const ROLE_NAVIGATION: Record<string, { label: string; items: { label: string; href: string; icon: string; any?: Permission[] }[] }[]> = {
   OWNER: [
-    { label: "Overview", items: [{ label: "Dashboard", href: "/dashboard", icon: "grid" }] },
+    { label: "Overview", items: [{ label: "Dashboard", href: "/owner/dashboard", icon: "grid" }] },
     { label: "Production", items: [
-      { label: "Orders", href: "/orders", icon: "orders" },
-      { label: "New Order", href: "/orders/new", icon: "plus" },
-      { label: "Plan & Assign", href: "/production", icon: "production" },
-      { label: "Factory Flow", href: "/factory-flow", icon: "grid" }
+      { label: "Orders", href: "/owner/orders", icon: "orders" },
+      { label: "New Order", href: "/owner/orders/new", icon: "plus" },
+      { label: "Plan & Assign", href: "/owner/production", icon: "production" },
+      { label: "Factory Flow", href: "/owner/factory-flow", icon: "grid" }
     ] },
     { label: "Assets", items: [
-      { label: "Product Master", href: "/products", icon: "box" },
-      { label: "Inventory", href: "/inventory", icon: "inventory" },
-      { label: "Machines", href: "/machines", icon: "machine" }
+      { label: "Product Master", href: "/owner/products", icon: "box" },
+      { label: "Inventory", href: "/owner/inventory", icon: "inventory" },
+      { label: "Machines", href: "/owner/machines", icon: "machine" }
     ] },
     { label: "Logistics", items: [
-      { label: "Dispatch Dashboard", href: "/dispatch", icon: "grid" }
+      { label: "Dispatch Dashboard", href: "/owner/dispatch", icon: "grid" }
     ] },
-    { label: "Financials", items: [{ label: "Finance & Payroll", href: "/finance", icon: "finance" }] }
+    { label: "Financials", items: [{ label: "Finance & Payroll", href: "/owner/finance", icon: "finance" }] }
   ],
   SUPERVISOR: [
-    { label: "Overview", items: [{ label: "Dashboard", href: "/dashboard", icon: "grid" }] },
+    { label: "Overview", items: [{ label: "Dashboard", href: "/supervisor/dashboard", icon: "grid" }] },
     { label: "Production", items: [
-      { label: "Orders", href: "/orders", icon: "orders" },
-      { label: "New Order", href: "/orders/new", icon: "plus" },
-      { label: "Plan & Assign", href: "/production", icon: "production" },
-      { label: "Factory Flow", href: "/factory-flow", icon: "grid" }
+      { label: "Orders", href: "/supervisor/orders", icon: "orders" },
+      { label: "New Order", href: "/supervisor/orders/new", icon: "plus" },
+      { label: "Plan & Assign", href: "/supervisor/production", icon: "production" },
+      { label: "Factory Flow", href: "/supervisor/factory-flow", icon: "grid" }
     ] },
     { label: "Assets", items: [
-      { label: "Product Master", href: "/products", icon: "box" },
-      { label: "Inventory", href: "/inventory", icon: "inventory" },
-      { label: "Machines", href: "/machines", icon: "machine" }
+      { label: "Product Master", href: "/supervisor/products", icon: "box" },
+      { label: "Inventory", href: "/supervisor/inventory", icon: "inventory" },
+      { label: "Machines", href: "/supervisor/machines", icon: "machine" }
     ] },
     { label: "Logistics", items: [
-      { label: "Dispatch Dashboard", href: "/dispatch", icon: "grid" }
+      { label: "Dispatch Dashboard", href: "/supervisor/dispatch", icon: "grid" }
     ] }
   ],
   MACHINE_OPERATOR: [
@@ -148,20 +148,20 @@ export const ROLE_NAVIGATION: Record<string, { label: string; items: { label: st
   ],
   DISPATCH_OFFICER: [
     { label: "Logistics", items: [
-      { label: "Dispatch Dashboard", href: "/dispatch", icon: "grid" },
+      { label: "Dispatch Dashboard", href: "/dispatch/dashboard", icon: "grid" },
       { label: "Final QC Scan", href: "/dispatch/scan", icon: "scan" }
     ] }
   ],
   QUALITY_INSPECTOR: [
     { label: "Inspections", items: [
-      { label: "Quality Dashboard", href: "/quality", icon: "grid" },
+      { label: "Quality Dashboard", href: "/quality/dashboard", icon: "grid" },
       { label: "Scan Roll", href: "/quality/scan", icon: "scan" }
     ] }
   ],
   BUYER: [
     { label: "Purchasing", items: [
       { label: "Buyer Dashboard", href: "/buyer/dashboard", icon: "grid" },
-      { label: "Product Catalog", href: "/products", icon: "box" },
+      { label: "Product Catalog", href: "/buyer/products", icon: "box" },
       { label: "Track Orders", href: "/buyer/orders", icon: "orders" },
       { label: "New Order", href: "/buyer/orders/new", icon: "plus" }
     ] }

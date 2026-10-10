@@ -3,7 +3,7 @@
 /* eslint-disable react/jsx-key -- These JSX values are typed DataTable row descriptors; DataTable creates keyed table rows/cells, while direct rendered lists keep explicit entity keys. */
 
 import { useMemo, useState, type FormEvent } from "react";
-import Link from "next/link";
+import { RoleLink as Link } from "@/components/ui/primitives";
 import { Activity, ArrowLeft, ArrowRight, Clock3, ShieldAlert, Wrench } from "lucide-react";
 import { useDemo } from "@/lib/demo/context";
 import { hasPermission } from "@/lib/auth/permissions";

@@ -1,7 +1,7 @@
 
 "use client";
 
-import Link from "next/link";
+import { RoleLink as Link } from "@/components/ui/primitives";
 import Decimal from "decimal.js";
 import { Activity, AlertTriangle, ArrowRight, CheckCircle2, CircleDollarSign, Clock3, Factory, LineChart, PackageCheck, Truck, Wrench, BarChart4 } from "lucide-react";
 import { useDemo } from "@/lib/demo/context";

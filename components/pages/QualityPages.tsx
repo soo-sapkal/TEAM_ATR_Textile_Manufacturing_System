@@ -2,7 +2,7 @@
 
 /* eslint-disable react/jsx-key -- These JSX values are typed DataTable row descriptors; DataTable creates keyed table rows/cells, while direct rendered lists keep explicit entity keys. */
 
-import Link from "next/link";
+import { RoleLink as Link } from "@/components/ui/primitives";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Decimal from "decimal.js";
 import { useRouter } from "next/navigation";

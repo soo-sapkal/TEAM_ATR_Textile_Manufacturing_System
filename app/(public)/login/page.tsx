@@ -56,8 +56,9 @@ export default function LoginPage() {
       const next = new URLSearchParams(window.location.search).get("next");
       
       setTimeout(() => {
-        router.push(next && next.startsWith("/") && !next.startsWith("//") ? next : targetPath);
-        window.location.href = targetPath;
+        const finalPath = next && next.startsWith("/") && !next.startsWith("//") ? next : targetPath;
+        router.push(finalPath);
+        window.location.href = finalPath;
       }, 300);
       
     } catch (err) {
