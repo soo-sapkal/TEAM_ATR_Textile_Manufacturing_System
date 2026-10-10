@@ -89,20 +89,6 @@ export function DemoProvider({ children }: { children: ReactNode }) {
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const ready = clientReady && isAuthLoaded && isDataLoaded;
 
-  useEffect(() => {
-    fetch("/api/auth/me")
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.user) {
-          const perms = d.user.permissions?.length ? d.user.permissions : (DEMO_USERS.find(u => u.roles.includes(d.user.roles[0]))?.permissions || []);
-          setUser({ ...d.user, permissions: perms, landing: "/" });
-        } else {
-          setUser(null);
-        }
-      })
-      .catch(() => setUser(null))
-      .finally(() => setIsAuthLoaded(true));
-
   const refreshData = useCallback(() => {
     Promise.all([
       fetch("/api/orders").then(r => r.json()),
