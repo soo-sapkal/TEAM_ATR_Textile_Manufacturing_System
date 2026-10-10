@@ -252,7 +252,7 @@ Dispatch Officer Sign: ${user?.name ?? "Sameer Khan"}
     handleDownload(`Gate_Pass_${generatedGatePassNo}.txt`, content, "Vehicle Gate Pass");
   };
 
-  const handleConfirmFulfillment = () => {
+  const handleConfirmFulfillment = async () => {
     if (!fulfillingOrder) return;
 
     const rolls = getOrderRolls(fulfillingOrder.code);
@@ -260,63 +260,41 @@ Dispatch Officer Sign: ${user?.name ?? "Sameer Khan"}
     const ratePerMeter = new Decimal(fulfillingOrder.revenue).div(fulfillingOrder.ordered).toFixed(2);
     const totalAmount = totalMeters.mul(ratePerMeter).mul(1.05).toFixed(2);
 
-    // Create completed shipment object with all DB Analysis Note fields
-    const newShipmentId = `shipment-${data.shipments.length + 1}`;
-    const newShipmentCode = `SHP-2026-${String(data.shipments.length + 1).padStart(4, "0")}`;
+    try {
+      const res = await fetch("/api/dispatch/fulfill", {
+        method: "POST",
+        body: JSON.stringify({
+          orderCode: fulfillingOrder.code,
+          rollIds: rolls.map((r) => r.id),
+          buyer: fulfillingOrder.buyer,
+          vehicle: licensePlate,
+          driverName,
+          licensePlate,
+          transportAgency,
+          ewayBillNumber,
+          plannedAt: plannedDeparture,
+          invoice: generatedInvoiceNo,
+          amount: totalAmount,
+          actor: user?.name
+        })
+      });
+      const resData = await res.json();
 
-    const newShipment: Shipment = {
-      id: newShipmentId,
-      code: newShipmentCode,
-      orderCode: fulfillingOrder.code,
-      rollIds: rolls.map((r) => r.id),
-      buyer: fulfillingOrder.buyer,
-      status: "DISPATCHED",
-      rolls: rolls.length,
-      qty: totalMeters.toFixed(3),
-      unit: fulfillingOrder.unit,
-      vehicle: licensePlate,
-      driverName,
-      licensePlate,
-      transportAgency,
-      ewayBillNumber,
-      plannedAt: plannedDeparture,
-      invoice: generatedInvoiceNo,
-      amount: totalAmount,
-    };
-
-    // Push new shipment to state
-    data.shipments.unshift(newShipment);
-
-    // Update rolls to DISPATCHED
-    rolls.forEach((r) => {
-      r.status = "DISPATCHED";
-      r.location = `In Transit (${licensePlate})`;
-    });
-
-    // Update order dispatched quantity & status
-    fulfillingOrder.dispatched = new Decimal(fulfillingOrder.dispatched)
-      .plus(totalMeters)
-      .toFixed(3);
-    fulfillingOrder.remaining = Decimal.max(
-      0,
-      new Decimal(fulfillingOrder.ordered).minus(fulfillingOrder.dispatched)
-    ).toFixed(3);
-
-    if (new Decimal(fulfillingOrder.remaining).lte(0)) {
-      fulfillingOrder.displayStatus = "DISPATCHED";
-      fulfillingOrder.status = "COMPLETED";
-      setCompletedOrderIds((prev) => [...prev, fulfillingOrder.id]);
-    } else {
-      fulfillingOrder.displayStatus = "PARTIALLY_DISPATCHED";
+      if (resData.success) {
+        toast(
+          "Fulfillment Completed!",
+          `Order ${fulfillingOrder.code} fulfilled. Shipment ${resData.shipment.code} and invoice ${generatedInvoiceNo} created.`,
+          "success"
+        );
+        setCompletedOrderIds((prev) => [...prev, fulfillingOrder.id]);
+        handleCloseFulfill();
+        window.location.reload();
+      } else {
+        toast("Failed to Fulfill", resData.error, "error");
+      }
+    } catch (err: any) {
+      toast("Error", err.message, "error");
     }
-
-    toast(
-      "Fulfillment Completed!",
-      `Order ${fulfillingOrder.code} fulfilled. Shipment ${newShipmentCode} and invoice ${generatedInvoiceNo} created.`,
-      "success"
-    );
-
-    handleCloseFulfill();
   };
 
   return (

@@ -81,6 +81,55 @@ export function DemoProvider({ children }: { children: ReactNode }) {
       })
       .catch(() => setUser(null))
       .finally(() => setIsAuthLoaded(true));
+
+    fetch("/api/orders")
+      .then((r) => r.json())
+      .then((res) => {
+        if (res.success && res.data) {
+          setData((prev) => {
+            const next = { ...prev, orders: res.data };
+            dataRef.current = next;
+            return next;
+          });
+        }
+      })
+      .catch(console.error);
+
+    fetch("/api/inventory")
+      .then((r) => r.json())
+      .then((res) => {
+        if (res.success && res.data) {
+          setData((prev) => {
+            const next = { 
+              ...prev, 
+              yarnItems: res.data.yarnItems || prev.yarnItems,
+              yarnBatches: res.data.yarnBatches || prev.yarnBatches,
+              yarnMovements: res.data.yarnMovements || prev.yarnMovements
+            };
+            dataRef.current = next;
+            return next;
+          });
+        }
+      })
+      .catch(console.error);
+
+    fetch("/api/dispatch")
+      .then((r) => r.json())
+      .then((res) => {
+        if (res.success && res.data) {
+          setData((prev) => {
+            const next = { 
+              ...prev, 
+              shipments: res.data.shipments || prev.shipments,
+              dispatchEvents: res.data.dispatchEvents || prev.dispatchEvents,
+              rolls: res.data.rolls || prev.rolls
+            };
+            dataRef.current = next;
+            return next;
+          });
+        }
+      })
+      .catch(console.error);
   }, []);
 
   const toast = useCallback((title: string, detail?: string, tone: ToastMessage["tone"] = "info") => {

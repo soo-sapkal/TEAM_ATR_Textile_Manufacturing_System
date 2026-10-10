@@ -89,13 +89,32 @@ export function NewOrderPage() {
     return { ...b, requiredTotal, available, isShort };
   });
 
-  function submit(event: FormEvent) {
+  async function submit(event: FormEvent) {
     event.preventDefault();
     const parsed = orderDraftSchema.safeParse({ buyer, product: productName, colour, quantity, unit, due, priority, terms });
     if (!parsed.success) { toast("Order draft needs correction", parsed.error.issues[0]?.message ?? "Review the order fields.", "error"); return; }
     if (hasShortage) { toast("Material Shortage", "Cannot create order with missing yarn dependencies.", "error"); return; }
+    
     setSubmitted(true);
-    toast("Order draft staged in this demo", "A live backend must issue the human-readable order code and validate approval state.", "warning");
+    
+    try {
+      const res = await fetch("/api/orders", {
+        method: "POST",
+        body: JSON.stringify({ buyer, product: productName, colour, quantity, unit, due, priority, terms })
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast("Order created", `Successfully created draft order ${data.data.code}`, "success");
+        // Reload to show the new order in context
+        window.location.href = user?.role === "BUYER" ? "/buyer/orders" : (user?.role === "OWNER" ? "/owner/orders" : "/orders");
+      } else {
+        toast("Failed to create order", data.error, "error");
+        setSubmitted(false);
+      }
+    } catch (e: any) {
+      toast("Error", e.message, "error");
+      setSubmitted(false);
+    }
   }
   
   return <>
@@ -149,7 +168,25 @@ export function OrderDetailPage({ id }: { id: string }) {
   if (!order) return <><PageHeader title="Order not found" description="We could not find that demo order."/><EmptyState title="No order record" action={<LinkButton href={`${user?.role === "BUYER" ? "/buyer" : user?.role === "OWNER" ? "/owner" : ""}/orders`}>Return to order book</LinkButton>}/></>;
   const percent = clampPercent(order.produced, order.ordered);
   const costComplete = new Decimal(order.recordedCost).gt(0);
-  function staged(message: string) { toast(message, "This action is only simulated in the preview; no state change reaches the mill system.", "warning"); }
+  
+  async function updateStatus(status: string, displayStatus: string, stage?: string) {
+    try {
+      const res = await fetch(`/api/orders/${order.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status, displayStatus, stage })
+      });
+      const resData = await res.json();
+      if (resData.success) {
+        toast("Order updated", `Order ${order.code} updated`, "success");
+        window.location.reload();
+      } else {
+        toast("Failed to update order", resData.error, "error");
+      }
+    } catch (e: any) {
+      toast("Error", e.message, "error");
+    }
+  }
+
   return <>
     <PageHeader eyebrow="Order command page" title={order.code} description={`${order.buyer} · ${order.product} · ${order.colour}`} actions={<><LinkButton href={`${user?.role === "BUYER" ? "/buyer" : user?.role === "OWNER" ? "/owner" : ""}/orders`} variant="secondary"><ArrowLeft size={14}/> Orders</LinkButton><Can perm="finance.read"><LinkButton href="/finance" variant="secondary"><CircleDollarSign size={14}/> Cost view</LinkButton></Can></>} meta={<><StatusBadge status={order.displayStatus}/><StatusBadge status={order.priority}/><Tag>Due {formatDate(order.due)}</Tag>{order.atRisk && <StatusBadge status="HIGH" label="At risk"/>}</>} />
     {order.atRisk && <InfoStrip tone="danger" title="Commitment at risk.">Material readiness is short, due date is earlier than expected completion, or both. Review the active plan and record an owner decision.</InfoStrip>}
@@ -161,8 +198,8 @@ export function OrderDetailPage({ id }: { id: string }) {
         ["Order raised", "2026-10-04T09:00:00Z", "done"], ["Approved", "2026-10-04T11:20:00Z", "done"], ["Material reserved", order.materialShortage ? "Shortage · not released" : "Reservation recorded", order.materialShortage ? "blocked" : "done"], ["Production", order.stage ? `${order.stage.toLowerCase()} · in progress` : "Awaiting plan", order.stage ? "current" : "todo"], ["Quality", order.hasQualityHold ? "Hold · disposition needed" : `${order.accepted} ${order.unit} accepted`, order.hasQualityHold ? "blocked" : "todo"], ["Dispatch", `${order.dispatched} ${order.unit} dispatched`, "todo"],
       ].map(([label, detail, status]) => <div key={label} style={{ display: "grid", gridTemplateColumns: "130px 1fr auto", alignItems: "center", gap: 9, padding: "8px 0", borderBottom: "1px solid #d4cfbd" }}><span className="cell-primary">{label}</span><span className="cell-secondary">{detail}</span><StatusBadge status={status === "done" ? "COMPLETED" : status === "current" ? "IN_PROGRESS" : status === "blocked" ? "QUARANTINED" : "PLANNED"} label={status}/></div>)}</div></Card>
       <Can perm="finance.read" fallback={<Card className="col-6" title="Cost visibility"><InfoStrip tone="info">Cost amounts and allocation details are restricted to finance.read. Ask Finance for the approved view.</InfoStrip></Card>}><Card className="col-6" title="Cost visibility"><div className="page-grid"><div className="col-6"><Kicker>Recorded actual/allocated</Kicker><strong style={{ display: "block", font: "900 23px var(--font-display)", marginTop: 8 }}>{formatMoney(order.recordedCost, order.currency)}</strong><span className="cell-secondary">Includes posted direct cost and assigned overhead.</span></div><div className="col-6"><Kicker>Estimate / pending</Kicker><strong style={{ display: "block", font: "900 23px var(--font-display)", marginTop: 8 }}>{formatMoney(order.estimatedCost, order.currency)}</strong><span className="cell-secondary">Estimate is not actual booked cost.</span></div></div><InfoStrip tone={costComplete ? "success" : "warning"} title={costComplete ? "Cost has recorded rows." : "Cost incomplete."}>Missing machine rate or yarn cost stays flagged.</InfoStrip><Link href={`/finance/orders/${order.id}`} className="btn btn--secondary btn--sm">Open detailed cost <ArrowRight size={12}/></Link></Card></Can>
-      <Card className="col-8" title="Allowed next steps"><div className="page-grid"><div className="col-6"><Can perm="orders.approve" fallback={<span className="permission-note">Approval requires orders.approve.</span>}><Button variant="secondary" onClick={() => staged("Approval request shown")}>Approve order <Check size={14}/></Button></Can><p className="field__hint">Only an authorized person other than the creator can approve.</p></div><div className="col-6"><Can perm="production.plan" fallback={<span className="permission-note">Plan release requires production.plan.</span>}><Button disabled={order.materialShortage || order.hasQualityHold} onClick={() => staged("Plan release is blocked until real material checks pass")}>Release production plan <ArrowRight size={14}/></Button></Can><p className="field__hint">Disabled while yarn is short or a quality hold is open.</p></div><div className="col-12"><Field label="Reason for change (required by server for cancellation/reversal)" hint="5+ characters. No append-only event should be edited or deleted."><TextInput value={reason} minLength={5} onChange={(event) => setReason(event.target.value)} placeholder="Explain what changed and why…"/></Field></div></div></Card>
-      <Card className="col-4" title="Record boundary"><InfoStrip tone="warning">This page renders seeded demonstration data. The missing Textile_Manufacturing_System.pdf, part1.md, and part2.md were not supplied, so these statuses and transitions follow the attached analysis, not a verified database specification.</InfoStrip><LinkButton href={`/rolls?order=${encodeURIComponent(order.code)}`} variant="quiet">Related rolls <ArrowRight size={12}/></LinkButton></Card>
+      <Card className="col-8" title="Allowed next steps"><div className="page-grid"><div className="col-6"><Can perm="orders.approve" fallback={<span className="permission-note">Approval requires orders.approve.</span>}><Button variant="secondary" onClick={() => updateStatus("APPROVED", "APPROVED")}>Approve order <Check size={14}/></Button></Can><p className="field__hint">Only an authorized person other than the creator can approve.</p></div><div className="col-6"><Can perm="production.plan" fallback={<span className="permission-note">Plan release requires production.plan.</span>}><Button disabled={order.materialShortage || order.hasQualityHold} onClick={() => updateStatus("IN_PRODUCTION", "IN_PRODUCTION", "SPINNING")}>Release production plan <ArrowRight size={14}/></Button></Can><p className="field__hint">Disabled while yarn is short or a quality hold is open.</p></div><div className="col-12"><Field label="Reason for change (required by server for cancellation/reversal)" hint="5+ characters. No append-only event should be edited or deleted."><TextInput value={reason} minLength={5} onChange={(event) => setReason(event.target.value)} placeholder="Explain what changed and why…"/></Field></div></div></Card>
+      <Card className="col-4" title="Live System Boundary"><InfoStrip tone="warning">This page dynamically reads and updates orders from the live Supabase API!</InfoStrip><LinkButton href={`/rolls?order=${encodeURIComponent(order.code)}`} variant="quiet">Related rolls <ArrowRight size={12}/></LinkButton></Card>
     </div>
   </>;
 }

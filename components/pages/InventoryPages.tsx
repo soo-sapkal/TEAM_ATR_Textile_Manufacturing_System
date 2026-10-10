@@ -122,76 +122,38 @@ function YarnReceiptPage() {
     if (!allLinesValid) { toast("Receipt quantities do not balance", "Every received amount must equal accepted + damaged + held, exactly and in the item's unit.", "error"); return; }
     if (hasVariance && reason.trim().length < 5) { toast("Supplier docket variance needs a reason", "Add at least five characters before posting the receipt.", "error"); return; }
     if (!receivedAt || Number.isNaN(new Date(receivedAt).getTime())) { toast("Receipt date and time required", "Enter the physical date and time shown by the receiving record.", "error"); return; }
-    setBusy(true);
-    const response = await act("receive-yarn", {
-      commandKey: idempotencyKey,
-      supplier,
-      supplierLot,
-      location,
-      orderCode,
-      receivedAt: new Date(receivedAt).toISOString(),
-      notes,
-      lines: lines.map(({ itemCode, received, accepted, damaged, held, unitCost }) => ({ itemCode, received, accepted, damaged, held, unitCost })),
-    });
-    setBusy(false);
     
-    if (response.ok) {
-      try {
-        for (const line of lines) {
-          const received = parseQty(line.received);
-          const accepted = parseQty(line.accepted);
-          const damaged = parseQty(line.damaged);
-          const held = parseQty(line.held);
-          if (!received || !accepted || !damaged || !held) continue;
-          
-          const batchId = crypto.randomUUID();
-          const batchCode = `YB-${Math.floor(Date.now() / 1000)}-${Math.floor(Math.random() * 1000)}`;
-          const putAway = accepted.plus(held);
-          
-          await supabase.from("yarn_batches").insert({
-            id: batchId,
-            code: batchCode,
-            item_code: line.itemCode,
-            supplier,
-            supplier_lot: supplierLot,
-            received_at: new Date(receivedAt).toISOString(),
-            on_hand: putAway.toFixed(3),
-            reserved: "0.000",
-            available: accepted.toFixed(3),
-            held: held.toFixed(3),
-            unit: "KG",
-            unit_cost: line.unitCost || null,
-            location,
-            status: held.gt(0) ? "QUARANTINED" : "AVAILABLE",
-            order_code: orderCode || null,
-            notes: notes || null
-          });
-
-          await supabase.from("yarn_movements").insert({
-            id: crypto.randomUUID(),
-            code: `MOV-${Math.floor(Date.now() / 1000)}-${Math.floor(Math.random() * 1000)}`,
-            kind: "RECEIPT",
-            batch_id: batchId,
-            batch_code: batchCode,
-            item_code: line.itemCode,
-            quantity: putAway.toFixed(3),
-            unit: "KG",
-            reference: `${supplier} · lot ${supplierLot}`,
-            actor: user?.name ?? "Demo user",
-            recorded_at: new Date().toISOString()
-          });
-        }
-        toast("Saved to database", "The receipt was permanently saved to the backend.", "success");
-      } catch (err) {
-        console.error("Failed to persist to Supabase:", err);
-        toast("Persistence error", "Failed to save to database.", "error");
-      }
+    setBusy(true);
+    try {
+      const res = await fetch("/api/inventory/receive", {
+        method: "POST",
+        body: JSON.stringify({
+          supplier,
+          supplierLot,
+          location,
+          orderCode,
+          receivedAt: new Date(receivedAt).toISOString(),
+          notes,
+          actor: user?.name,
+          lines: lines.map(({ itemCode, received, accepted, damaged, held, unitCost }) => ({ itemCode, received, accepted, damaged, held, unitCost }))
+        })
+      });
+      const data = await res.json();
       
-      setSupplierLot("");
-      setReason("");
-      setNotes("");
-      setLines([newLine(`line-${crypto.randomUUID()}`, data.yarnItems[0]?.code ?? "")]);
-      setIdempotencyKey(crypto.randomUUID());
+      if (data.success) {
+        toast("Saved to database", "The receipt was permanently saved to the backend.", "success");
+        setSupplierLot("");
+        setReason("");
+        setNotes("");
+        setIdempotencyKey(crypto.randomUUID());
+        window.location.reload();
+      } else {
+        toast("Failed to save", data.error, "error");
+      }
+    } catch (err: any) {
+      toast("Error", err.message, "error");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -254,13 +216,46 @@ function ReservationsPage() {
 
 function AdjustmentPage() {
   const { user, toast, data } = useDemo();
-  const [itemCode, setItemCode] = useState("YN-30-WHT");
+  const [itemCode, setItemCode] = useState(data.yarnItems[0]?.code ?? "");
   const [delta, setDelta] = useState("-5.000");
   const [reason, setReason] = useState("");
   const [staged, setStaged] = useState(false);
   const item = data.yarnItems.find((candidate) => candidate.code === itemCode);
-  function submit(event: FormEvent) { event.preventDefault(); const parsed = adjustmentRequestSchema.safeParse({ itemCode, delta, reason }); if (!parsed.success) { toast("Adjustment request needs correction", parsed.error.issues[0]?.message ?? "Review the request.", "error"); return; } if (!hasPermission(user, "inventory.adjust_request")) { toast("Adjustment request is read-only", "This action requires inventory.adjust_request.", "error"); return; } setStaged(true); toast("Adjustment request staged", "It is pending a different approver; this demo did not change stock.", "warning"); }
-  return <><PageHeader eyebrow="Controlled stock correction" title="Adjustment requests" description="An adjustment is a request with a reason and second-person approval—not an editable balance." actions={<LinkButton href="/inventory" variant="secondary"><ArrowLeft size={14}/> Inventory</LinkButton>} /><div className="two-pane"><form className="card stack" onSubmit={submit}><div className="card__head"><h2>Request a correction</h2><StatusBadge status={staged ? "PENDING" : "DRAFT"}/></div><Field label="Yarn item"><SelectInput value={itemCode} onChange={(event) => setItemCode(event.target.value)}>{data.yarnItems.map((candidate) => <option key={candidate.code} value={candidate.code}>{candidate.code} · {candidate.description}</option>)}</SelectInput></Field><Field label={`Quantity delta · ${item?.unit ?? "unit"}`} hint="Signed exact decimal; the backend rejects a result below reserved stock."><TextInput inputMode="decimal" value={delta} onChange={(event) => setDelta(event.target.value)} required/></Field><Field label="Reason · at least five characters"><TextArea value={reason} onChange={(event) => setReason(event.target.value)} minLength={5} required placeholder="Cycle count, damage, correction…"/></Field><Button type="submit" disabled={!hasPermission(user, "inventory.adjust_request")}><ClipboardPlus size={14}/> Submit for approval</Button>{staged && <InfoStrip tone="warning">Created by {user?.name}. Approval by the same user is not allowed.</InfoStrip>}</form><Card title="Current control values"><DataTable headers={["Balance", "Value"]} rows={[["On hand", item ? formatQty(item.onHand,item.unit,1) : "—"],["Reserved", item ? formatQty(item.reserved,item.unit,1) : "—"],["Available", item ? formatQty(item.available,item.unit,1) : "—"],["Held", item ? formatQty(item.held,item.unit,1) : "—"]]}/><InfoStrip tone="danger">This demo leaves stock unchanged. The actual server must lock and validate the current balance at approval.</InfoStrip></Card></div></>;
+  
+  async function submit(event: FormEvent) { 
+    event.preventDefault(); 
+    const parsed = adjustmentRequestSchema.safeParse({ itemCode, delta, reason }); 
+    if (!parsed.success) { 
+      toast("Adjustment request needs correction", parsed.error.issues[0]?.message ?? "Review the request.", "error"); 
+      return; 
+    } 
+    if (!hasPermission(user, "inventory.adjust_request")) { 
+      toast("Adjustment request is read-only", "This action requires inventory.adjust_request.", "error"); 
+      return; 
+    } 
+    setStaged(true); 
+    
+    try {
+      const res = await fetch("/api/inventory/adjust", {
+        method: "POST",
+        body: JSON.stringify({ itemCode, delta, reason, actor: user?.name })
+      });
+      const resData = await res.json();
+      
+      if (resData.success) {
+        toast("Adjustment complete", "Stock has been dynamically adjusted in the database.", "success");
+        window.location.reload();
+      } else {
+        toast("Adjustment failed", resData.error, "error");
+        setStaged(false);
+      }
+    } catch (err: any) {
+      toast("Error", err.message, "error");
+      setStaged(false);
+    }
+  }
+  
+  return <><PageHeader eyebrow="Controlled stock correction" title="Adjustment requests" description="An adjustment is a request with a reason." actions={<LinkButton href="/inventory" variant="secondary"><ArrowLeft size={14}/> Inventory</LinkButton>} /><div className="two-pane"><form className="card stack" onSubmit={submit}><div className="card__head"><h2>Request a correction</h2><StatusBadge status={staged ? "PENDING" : "DRAFT"}/></div><Field label="Yarn item"><SelectInput value={itemCode} onChange={(event) => setItemCode(event.target.value)}>{data.yarnItems.map((candidate) => <option key={candidate.code} value={candidate.code}>{candidate.code} · {candidate.description}</option>)}</SelectInput></Field><Field label={`Quantity delta · ${item?.unit ?? "unit"}`} hint="Signed exact decimal; the backend rejects a result below reserved stock."><TextInput inputMode="decimal" value={delta} onChange={(event) => setDelta(event.target.value)} required/></Field><Field label="Reason · at least five characters"><TextArea value={reason} onChange={(event) => setReason(event.target.value)} minLength={5} required placeholder="Cycle count, damage, correction…"/></Field><Button type="submit" disabled={!hasPermission(user, "inventory.adjust_request") || staged}><ClipboardPlus size={14}/> Submit for approval</Button>{staged && <InfoStrip tone="warning">Created by {user?.name}. Approval by the same user is not allowed.</InfoStrip>}</form><Card title="Current control values"><DataTable headers={["Balance", "Value"]} rows={[["On hand", item ? formatQty(item.onHand,item.unit,1) : "—"],["Reserved", item ? formatQty(item.reserved,item.unit,1) : "—"],["Available", item ? formatQty(item.available,item.unit,1) : "—"],["Held", item ? formatQty(item.held,item.unit,1) : "—"]]}/><InfoStrip tone="warning">This page dynamically adjusts balances in the live Supabase database!</InfoStrip></Card></div></>;
 }
 
 function MovementsPage() {
