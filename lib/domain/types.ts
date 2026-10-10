@@ -255,6 +255,8 @@ export interface DemoData {
   machineEvents: MachineEvent[];
   processedCommandKeys: string[];
   notifications: { id: string; title: string; body: string; href: string; unread: boolean; when: string }[];
+  invoices: Invoice[];
+  payments: Payment[];
 }
 
 export interface ApiEnvelope<T> {
@@ -264,4 +266,23 @@ export interface ApiEnvelope<T> {
 
 export interface ApiErrorEnvelope {
   error: { code: string; message: string; details?: Record<string, unknown>; request_id?: string };
+}
+export interface Invoice {
+  id: string;
+  orderId: string;
+  buyerName: string;
+  amountDue: number;
+  dueDate: string;
+  status: "PENDING" | "PARTIAL" | "PAID";
+  createdAt: string;
+}
+
+export interface Payment {
+  id: string;
+  invoiceId: string;
+  amountPaid: number;
+  paymentMethod: string;
+  referenceNo: string;
+  paymentDate: string;
+  createdAt: string;
 }
