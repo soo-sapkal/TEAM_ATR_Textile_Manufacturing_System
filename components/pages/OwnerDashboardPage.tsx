@@ -33,7 +33,7 @@ export function OwnerDashboardPage() {
   return (
     <>
       <PageHeader
-        eyebrow={`Owner Executive View · ${today}`}
+        eyebrow={`Owner Executive View - ${today}`}
         title="Business & Operations Command"
         description="High-level factory performance, financials, and critical bottlenecks. This view is restricted to the Factory Owner."
         actions={<>
@@ -103,7 +103,7 @@ export function OwnerDashboardPage() {
               <Link href={`/owner/machines`} key={machine.id} className="info-strip info-strip--danger" style={{ border: "2px solid #000", boxShadow: "2px 2px 0 #000" }}>
                 <Wrench size={17}/>
                 <div>
-                  <strong>{machine.code} Breakdown · {machine.downtimeMinutes} min downtime</strong>
+                  <strong>{machine.code} Breakdown - {machine.downtimeMinutes} min downtime</strong>
                   <div>Affecting {machine.orderCode}. Immediate maintenance required.</div>
                 </div>
               </Link>
@@ -112,7 +112,7 @@ export function OwnerDashboardPage() {
               <Link href={`/orders/${order.id}`} key={order.id} className="info-strip info-strip--warning" style={{ border: "2px solid #000", boxShadow: "2px 2px 0 #000" }}>
                 <Clock3 size={17}/>
                 <div>
-                  <strong>{order.code} · Delivery at risk</strong>
+                  <strong>{order.code} - Delivery at risk</strong>
                   <div>Due {formatDate(order.due)}. Expedite production or resolve shortages.</div>
                 </div>
               </Link>
