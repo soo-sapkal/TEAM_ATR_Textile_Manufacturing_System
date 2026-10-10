@@ -21,6 +21,10 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
+  const [selectedSpin, setSelectedSpin] = useState("u-operator-spinning");
+  const [selectedWeav, setSelectedWeav] = useState("u-operator-weaving");
+  const [selectedDye, setSelectedDye] = useState("u-operator-dyeing");
+
   async function enterAs(id: string) {
     setBusy(true);
     setError("");
@@ -28,6 +32,7 @@ export default function LoginPage() {
     if (!selected) return;
 
     try {
+      loginAs(selected.id);
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -138,28 +143,85 @@ export default function LoginPage() {
             </button>
           ))}
           
-          <div className="persona-button" style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start", cursor: "default", padding: "12px 16px" }}>
-            <strong>Operator (Spinning)</strong>
-            <select className="input select" style={{ minHeight: 32, padding: "4px 8px", fontSize: 11, width: "100%", background: "#fff" }} defaultValue="" onChange={e => e.target.value && enterAs(e.target.value)}>
-              <option value="" disabled>Select account...</option>
-              {DEMO_USERS.filter(u => u.id === "u-operator-spinning" || u.id.startsWith("u-op-spin-")).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+          <div className="persona-button" style={{ display: "flex", flexDirection: "column", gap: 6, padding: "8px 10px", justifyContent: "space-between", background: "var(--paper)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <strong>Operator (Spinning)</strong>
+              <small style={{ color: "var(--ink-soft)", fontSize: 9 }}>11 accounts</small>
+            </div>
+            <select
+              className="input select"
+              style={{ minHeight: 30, padding: "3px 6px", fontSize: 11, width: "100%", background: "#fff" }}
+              value={selectedSpin}
+              onChange={(e) => setSelectedSpin(e.target.value)}
+            >
+              <option value="u-operator-spinning">Ravi Kumar (Lead Spinning Operator)</option>
+              {DEMO_USERS.filter(u => u.id.startsWith("u-op-spin-")).map(u => (
+                <option key={u.id} value={u.id}>{u.name}</option>
+              ))}
             </select>
+            <Button
+              type="button"
+              size="sm"
+              disabled={busy}
+              onClick={() => enterAs(selectedSpin)}
+              style={{ width: "100%", justifyContent: "center", minHeight: 28, fontSize: 11, padding: "4px 8px" }}
+            >
+              Sign In <ArrowRight size={13} style={{ marginLeft: 4 }} />
+            </Button>
           </div>
           
-          <div className="persona-button" style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start", cursor: "default", padding: "12px 16px" }}>
-            <strong>Operator (Weaving)</strong>
-            <select className="input select" style={{ minHeight: 32, padding: "4px 8px", fontSize: 11, width: "100%", background: "#fff" }} defaultValue="" onChange={e => e.target.value && enterAs(e.target.value)}>
-              <option value="" disabled>Select account...</option>
-              {DEMO_USERS.filter(u => u.id === "u-operator-weaving" || u.id.startsWith("u-op-weav-")).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+          <div className="persona-button" style={{ display: "flex", flexDirection: "column", gap: 6, padding: "8px 10px", justifyContent: "space-between", background: "var(--paper)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <strong>Operator (Weaving)</strong>
+              <small style={{ color: "var(--ink-soft)", fontSize: 9 }}>11 accounts</small>
+            </div>
+            <select
+              className="input select"
+              style={{ minHeight: 30, padding: "3px 6px", fontSize: 11, width: "100%", background: "#fff" }}
+              value={selectedWeav}
+              onChange={(e) => setSelectedWeav(e.target.value)}
+            >
+              <option value="u-operator-weaving">Suresh Patel (Lead Weaving Operator)</option>
+              {DEMO_USERS.filter(u => u.id.startsWith("u-op-weav-")).map(u => (
+                <option key={u.id} value={u.id}>{u.name}</option>
+              ))}
             </select>
+            <Button
+              type="button"
+              size="sm"
+              disabled={busy}
+              onClick={() => enterAs(selectedWeav)}
+              style={{ width: "100%", justifyContent: "center", minHeight: 28, fontSize: 11, padding: "4px 8px" }}
+            >
+              Sign In <ArrowRight size={13} style={{ marginLeft: 4 }} />
+            </Button>
           </div>
           
-          <div className="persona-button" style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start", cursor: "default", padding: "12px 16px" }}>
-            <strong>Operator (Dyeing)</strong>
-            <select className="input select" style={{ minHeight: 32, padding: "4px 8px", fontSize: 11, width: "100%", background: "#fff" }} defaultValue="" onChange={e => e.target.value && enterAs(e.target.value)}>
-              <option value="" disabled>Select account...</option>
-              {DEMO_USERS.filter(u => u.id === "u-operator-dyeing" || u.id.startsWith("u-op-dye-")).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+          <div className="persona-button" style={{ display: "flex", flexDirection: "column", gap: 6, padding: "8px 10px", justifyContent: "space-between", background: "var(--paper)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <strong>Operator (Dyeing)</strong>
+              <small style={{ color: "var(--ink-soft)", fontSize: 9 }}>11 accounts</small>
+            </div>
+            <select
+              className="input select"
+              style={{ minHeight: 30, padding: "3px 6px", fontSize: 11, width: "100%", background: "#fff" }}
+              value={selectedDye}
+              onChange={(e) => setSelectedDye(e.target.value)}
+            >
+              <option value="u-operator-dyeing">Kavita Rao (Lead Dyeing Operator)</option>
+              {DEMO_USERS.filter(u => u.id.startsWith("u-op-dye-")).map(u => (
+                <option key={u.id} value={u.id}>{u.name}</option>
+              ))}
             </select>
+            <Button
+              type="button"
+              size="sm"
+              disabled={busy}
+              onClick={() => enterAs(selectedDye)}
+              style={{ width: "100%", justifyContent: "center", minHeight: 28, fontSize: 11, padding: "4px 8px" }}
+            >
+              Sign In <ArrowRight size={13} style={{ marginLeft: 4 }} />
+            </Button>
           </div>
         </div>
         <p style={{ marginTop: 24, fontSize: 10, color: "var(--ink-soft)" }}><LinkButton href="/" size="sm" variant="quiet">Back to the Gate</LinkButton></p>
