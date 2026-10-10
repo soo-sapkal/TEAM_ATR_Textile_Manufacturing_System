@@ -51,6 +51,7 @@ export const ROLE_NAVIGATION: Record<string, { label: string; items: { label: st
   OWNER: [
     { label: "Overview", items: [{ label: "Dashboard", href: "/owner/dashboard", icon: "grid" }] },
     { label: "Operations", items: [
+      { label: "Product Master", href: "/products", icon: "box" },
       { label: "Inventory", href: "/owner/inventory", icon: "inventory" },
       { label: "Machines", href: "/owner/machines", icon: "machine" }
     ] },
@@ -64,6 +65,7 @@ export const ROLE_NAVIGATION: Record<string, { label: string; items: { label: st
       { label: "Factory Flow", href: "/supervisor/factory-flow", icon: "grid" }
     ] },
     { label: "Assets", items: [
+      { label: "Product Master", href: "/products", icon: "box" },
       { label: "Inventory", href: "/supervisor/inventory", icon: "inventory" },
       { label: "Machines", href: "/supervisor/machines", icon: "machine" }
     ] },
