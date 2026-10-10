@@ -13,6 +13,7 @@ import { formatDateTime, formatMoney, formatQty } from "@/lib/domain/format";
 import { Button, Card, DataTable, EmptyState, Field, InfoStrip, LinkButton, PageHeader, SelectInput, StatCard, StatusBadge, Tag, TextArea, TextInput } from "@/components/ui/primitives";
 import type { YarnItem } from "@/lib/domain/types";
 import { adjustmentRequestSchema } from "@/lib/domain/schemas";
+import { supabase } from "@/lib/supabase/client";
 
 export function InventoryRoute({ path, id }: { path: string; id?: string }) {
   if (path === "/inventory/receive") return <YarnReceiptPage/>;
@@ -41,17 +42,21 @@ function InventoryPage() {
 function YarnReceiptPage() {
   const { data, act, toast, user } = useDemo();
   type ReceiptLine = { id: string; itemCode: string; docketQty: string; received: string; accepted: string; damaged: string; held: string; unitCost: string; acceptedManual: boolean };
-  const newLine = (id: string, itemCode: string): ReceiptLine => ({ id, itemCode, docketQty: "100.000", received: "100.000", accepted: "94.000", damaged: "2.000", held: "4.000", unitCost: "", acceptedManual: false });
+  const newLine = (id: string, itemCode: string): ReceiptLine => ({ id, itemCode, docketQty: "", received: "", accepted: "", damaged: "", held: "", unitCost: "", acceptedManual: false });
   const parseQty = (value: string): Decimal | null => {
     if (!/^\d{1,11}(\.\d{1,3})?$/.test(value)) return null;
     try { const parsed = new Decimal(value); return parsed.isFinite() ? parsed : null; } catch { return null; }
   };
   const [lines, setLines] = useState<ReceiptLine[]>([newLine("line-1", data.yarnItems[0]?.code ?? "")]);
-  const [supplier, setSupplier] = useState("Karnataka Spinners");
+  const [supplier, setSupplier] = useState("");
   const [supplierLot, setSupplierLot] = useState("");
-  const [receivedAt, setReceivedAt] = useState("");
+  const [receivedAt, setReceivedAt] = useState(() => {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    return now.toISOString().slice(0, 16);
+  });
   const [orderCode, setOrderCode] = useState("");
-  const [location, setLocation] = useState("WH-YARN-A1");
+  const [location, setLocation] = useState("");
   const [reason, setReason] = useState("");
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
@@ -118,11 +123,62 @@ function YarnReceiptPage() {
       lines: lines.map(({ itemCode, received, accepted, damaged, held, unitCost }) => ({ itemCode, received, accepted, damaged, held, unitCost })),
     });
     setBusy(false);
+    
     if (response.ok) {
+      try {
+        for (const line of lines) {
+          const received = parseQty(line.received);
+          const accepted = parseQty(line.accepted);
+          const damaged = parseQty(line.damaged);
+          const held = parseQty(line.held);
+          if (!received || !accepted || !damaged || !held) continue;
+          
+          const batchId = crypto.randomUUID();
+          const batchCode = `YB-${Math.floor(Date.now() / 1000)}-${Math.floor(Math.random() * 1000)}`;
+          const putAway = accepted.plus(held);
+          
+          await supabase.from("yarn_batches").insert({
+            id: batchId,
+            code: batchCode,
+            item_code: line.itemCode,
+            supplier,
+            supplier_lot: supplierLot,
+            received_at: new Date(receivedAt).toISOString(),
+            on_hand: putAway.toFixed(3),
+            reserved: "0.000",
+            available: accepted.toFixed(3),
+            held: held.toFixed(3),
+            unit: "KG",
+            unit_cost: line.unitCost || null,
+            location,
+            status: held.gt(0) ? "QUARANTINED" : "AVAILABLE",
+            order_code: orderCode || null,
+            notes: notes || null
+          });
+
+          await supabase.from("yarn_movements").insert({
+            id: crypto.randomUUID(),
+            code: `MOV-${Math.floor(Date.now() / 1000)}-${Math.floor(Math.random() * 1000)}`,
+            kind: "RECEIPT",
+            batch_id: batchId,
+            batch_code: batchCode,
+            item_code: line.itemCode,
+            quantity: putAway.toFixed(3),
+            unit: "KG",
+            reference: `${supplier} · lot ${supplierLot}`,
+            actor: user?.name ?? "Demo user",
+            recorded_at: new Date().toISOString()
+          });
+        }
+        toast("Saved to database", "The receipt was permanently saved to the backend.", "success");
+      } catch (err) {
+        console.error("Failed to persist to Supabase:", err);
+        toast("Persistence error", "Failed to save to database.", "error");
+      }
+      
       setSupplierLot("");
       setReason("");
       setNotes("");
-      setReceivedAt("");
       setLines([newLine(`line-${crypto.randomUUID()}`, data.yarnItems[0]?.code ?? "")]);
       setIdempotencyKey(crypto.randomUUID());
     }
@@ -199,5 +255,15 @@ function AdjustmentPage() {
 function MovementsPage() {
   const { data } = useDemo();
   const moves = [...data.yarnMovements].reverse();
-  return <><PageHeader eyebrow="Append-only stock history" title="Yarn movement ledger" description="Each movement has its own human-readable code, batch, quantity and unit, actor, and linked reference." actions={<LinkButton href="/inventory" variant="secondary"><ArrowLeft size={14}/> Inventory</LinkButton>} /><Card title="Movement journal" action={<Tag>Append-only</Tag>}><DataTable headers={["Movement", "Kind", "Batch", "Yarn", "Quantity", "Reference", "Actor", "Recorded"]} rows={moves.map((move) => [<span className="code">{move.code}</span>, <StatusBadge status={move.kind === "RECEIPT" ? "AVAILABLE" : move.kind === "HOLD" ? "QUARANTINED" : "IN_PROGRESS"} label={move.kind}/>, <Link className="code" href={`/inventory/batches/${data.yarnBatches.find((candidate) => candidate.id === move.batchId)?.id ?? "batch-01"}`}>{move.batchCode}</Link>, <span className="code">{move.itemCode}</span>, <span className="num">{new Decimal(move.quantity).gt(0) ? "+" : ""}{formatQty(move.quantity,move.unit,1)}</span>, move.reference, move.actor, formatDateTime(move.recordedAt)])}/></Card><InfoStrip tone="info" title="No edit or delete actions.">Fixes should append a reversing movement and a new movement with linked reason; the original line remains intact.</InfoStrip></>;
+  
+  const spinningMoves = moves.filter(m => m.kind === "ISSUE" && data.operations.find(o => (o.code === m.reference || o.id === m.reference) && o.stage === "SPINNING"));
+  const toSpinningQty = spinningMoves.reduce((sum, m) => sum.plus(new Decimal(m.quantity).abs()), new Decimal(0));
+  
+  return <><PageHeader eyebrow="Append-only stock history" title="Yarn movement ledger" description="Each movement has its own human-readable code, batch, quantity and unit, actor, and linked reference." actions={<LinkButton href="/inventory" variant="secondary"><ArrowLeft size={14}/> Inventory</LinkButton>} />
+    <div className="stat-grid">
+      <StatCard label="Total Recorded Movements" value={moves.length.toString()} />
+      <StatCard label="Issued to Spinning" value={`${toSpinningQty.toFixed(3)} KG`} tone="indigo" />
+    </div>
+    <Card title="Movement journal" action={<Tag>Append-only</Tag>}><DataTable headers={["Movement", "Kind", "Batch", "Yarn", "Quantity", "Reference", "Actor", "Recorded"]} rows={moves.map((move) => { const isToSpinning = spinningMoves.includes(move); return [<span className="code">{move.code}</span>, <StatusBadge status={move.kind === "RECEIPT" ? "AVAILABLE" : move.kind === "HOLD" ? "QUARANTINED" : "IN_PROGRESS"} label={move.kind}/>, <Link className="code" href={`/inventory/batches/${data.yarnBatches.find((candidate) => candidate.id === move.batchId)?.id ?? "batch-01"}`}>{move.batchCode}</Link>, <span className="code">{move.itemCode}</span>, <span className="num" style={{ fontWeight: isToSpinning ? "bold" : "normal", color: isToSpinning ? "var(--indigo)" : "inherit" }}>{new Decimal(move.quantity).gt(0) ? "+" : ""}{formatQty(move.quantity,move.unit,1)}</span>, move.reference, move.actor, formatDateTime(move.recordedAt)]; })}/></Card>
+    <InfoStrip tone="info" title="No edit or delete actions.">Fixes should append a reversing movement and a new movement with linked reason; the original line remains intact.</InfoStrip></>;
 }
