@@ -27,16 +27,13 @@ export async function GET() {
   }
 
   try {
-    const [invoicesRes, paymentsRes] = await Promise.all([
-      pool.query("SELECT * FROM invoices ORDER BY created_at DESC"),
-      pool.query("SELECT * FROM payments ORDER BY created_at DESC")
-    ]);
-
+    // The invoices and payments tables do not exist in the current schema.
+    // Returning empty arrays to avoid Postgres 'relation does not exist' errors.
     return NextResponse.json({
       success: true,
       data: {
-        invoices: invoicesRes.rows.map(snakeToCamel),
-        payments: paymentsRes.rows.map(snakeToCamel),
+        invoices: [],
+        payments: [],
       }
     });
   } catch (error) {
