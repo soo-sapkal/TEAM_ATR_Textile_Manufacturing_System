@@ -1,8 +1,25 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { supabase } from "@/lib/supabase/client";
+import { verifyToken } from "@/lib/auth/auth";
 
 export async function POST(req: Request) {
   try {
+    const cookieStore = await cookies();
+    const token = cookieStore.get("auth_token")?.value;
+    if (!token) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    
+    const payload = await verifyToken(token) as any;
+    let permissions = payload?.permissions || [];
+    if (permissions.length === 0 && payload?.role) {
+      const { ROLE_PERMISSIONS } = await import("@/lib/auth/permissions");
+      permissions = ROLE_PERMISSIONS[payload.role]?.perms || [];
+    }
+    
+    if (!payload || (!permissions.includes("quality.inspect") && !permissions.includes("quality.rework"))) {
+      return NextResponse.json({ success: false, error: "Forbidden: Requires quality.inspect permission" }, { status: 403 });
+    }
+
     const body = await req.json();
     const { rollId, result, defect, reason, location, evidenceCount, actor } = body;
 
