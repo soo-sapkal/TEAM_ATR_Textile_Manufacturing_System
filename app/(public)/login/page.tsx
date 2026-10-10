@@ -9,7 +9,7 @@ import { useDemo } from "@/lib/demo/context";
 import { BrandMark, Button, Field, LinkButton, TextInput } from "@/components/ui/primitives";
 
 const personaLabels: Record<string, string> = {
-  "u-admin": "Admin", "u-manager": "Manager", "u-manager-planner": "Manager + Planner", "u-planner": "Planner", "u-operator": "Operator", "u-store": "Storekeeper", "u-inspector": "Inspector", "u-dispatch": "Dispatch", "u-hr": "HR", "u-finance": "Finance", "u-buyer": "Buyer",
+  "u-owner": "Owner", "u-supervisor": "Supervisor", "u-operator-spinning": "Operator (Spinning)", "u-operator-weaving": "Operator (Weaving)", "u-operator-dyeing": "Operator (Dyeing)", "u-inspector": "Inspector", "u-dispatch": "Dispatch", "u-buyer": "Buyer"
 };
 
 export default function LoginPage() {

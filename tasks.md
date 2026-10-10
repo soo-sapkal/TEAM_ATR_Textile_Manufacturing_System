@@ -213,3 +213,25 @@ Several areas of the application require robust image storage (e.g., quality ins
    
 3. **Optimized Delivery:**
    - Use Cloudinary's transformation APIs to ensure images are served in optimal formats and sizes (e.g., thumbnails for lists, full resolution for detailed modal views).
+
+---
+
+# Task 12 - Product Master Data & BOM Management
+
+**Context & Requirements:**
+Currently, products are hardcoded strings without associated recipes (Bill of Materials). To make the system modular and production-ready, the Factory Owner and Supervisor roles need a dedicated feature to create and manage product SKUs and their manufacturing requirements.
+
+### Phase 1: Database Schema & Core API
+- **Product Table:** Create a new Supabase schema/table for `products` (fields: id, code, name, description, category).
+- **BOM Table:** Create a `bill_of_materials` table linking products to required raw materials (`yarn_items`), specifying ratios/yields per unit (e.g., kg of yarn per meter of fabric).
+- **API Endpoints:** Implement secure endpoints (GET, POST, PUT) to manage products and BOMs, enforcing role-based access (e.g., via `master.manage` permission).
+
+### Phase 2: Master Data Management UI
+- **Products List Page:** Add a new route (e.g., `/supervisor/products` and `/owner/products` or a centralized `/master-data`) displaying a DataTable of all factory products.
+- **Product Creation Form:** Build a Neobrutalist form to define a new product, including its SKU and base properties.
+- **BOM Configuration UI:** Inside the product details, create a dynamic UI to add/remove yarn types and specify the exact recipe/ratio required for production.
+
+### Phase 3: Integration with Order & Production Flow
+- **Dynamic Order Form:** Update the "Create an Order" form (`OrdersPages.tsx`) to fetch the live product catalog from the database instead of using hardcoded `<option>` tags.
+- **Material Reservation Validation:** When an order is placed, use the product's defined BOM to accurately calculate and validate material readiness against available yarn inventory (replacing the current "indicative only" warning).
+- **Production Routing:** Pass the selected product and BOM to the production plan so machine operators see exactly what yarn recipes to follow.
