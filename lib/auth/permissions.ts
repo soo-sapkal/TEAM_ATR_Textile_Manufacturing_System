@@ -3,30 +3,23 @@ import type { DemoUser, Permission } from "@/lib/domain/types";
 type Role = { name: string; perms: Permission[]; landing: string };
 
 export const ROLE_PERMISSIONS: Record<string, Role> = {
-  ADMIN: { name: "Admin", landing: "/admin/users", perms: ["users.manage", "audit.read", "master.manage"] },
-  MANAGER: { name: "Manager", landing: "/dashboard", perms: ["orders.read", "orders.approve", "inventory.read", "production.read", "machines.operate", "quality.read", "dispatch.read", "finance.read", "audit.read"] },
-  PLANNER: { name: "Planner", landing: "/production", perms: ["orders.read", "inventory.read", "production.read", "production.plan", "production.assign", "production.record_output", "quality.read", "dispatch.read"] },
-  OPERATOR: { name: "Operator", landing: "/my-work", perms: ["production.read", "production.record_output", "machines.operate", "quality.rework"] },
-  STOREKEEPER: { name: "Storekeeper", landing: "/inventory", perms: ["inventory.read", "inventory.receive", "inventory.reserve", "inventory.issue", "inventory.adjust_request", "orders.read", "production.read"] },
-  INSPECTOR: { name: "Inspector", landing: "/quality", perms: ["quality.read", "quality.inspect", "quality.rework", "quality.release"] },
-  DISPATCH: { name: "Dispatch", landing: "/dispatch", perms: ["dispatch.read", "dispatch.create", "dispatch.confirm", "dispatch.reverse", "orders.read", "quality.read"] },
-  HR: { name: "HR", landing: "/hr/attendance", perms: ["hr.attendance", "payroll.read", "payroll.draft", "payroll.approve"] },
-  FINANCE: { name: "Finance", landing: "/finance", perms: ["finance.read", "finance.write", "finance.approve", "payroll.read", "payroll.approve", "orders.read", "inventory.read"] },
-  BUYER: { name: "Buyer", landing: "/portal", perms: ["portal.read"] },
+  OWNER: { name: "Owner of Factory", landing: "/dashboard", perms: ["users.manage", "audit.read", "master.manage", "orders.read", "orders.approve", "inventory.read", "production.read", "machines.operate", "quality.read", "dispatch.read", "finance.read", "hr.attendance", "payroll.read"] },
+  SUPERVISOR: { name: "Supervisor (Factory Incharge)", landing: "/dashboard", perms: ["orders.read", "orders.create", "orders.approve", "inventory.read", "inventory.receive", "production.read", "production.plan", "production.assign", "production.record_output", "machines.operate", "quality.read", "dispatch.read"] },
+  MACHINE_OPERATOR: { name: "Machine Operator", landing: "/my-work", perms: ["production.read", "production.record_output", "machines.operate", "quality.rework", "hr.attendance", "payroll.read"] },
+  QUALITY_INSPECTOR: { name: "Quality Inspector", landing: "/quality", perms: ["quality.read", "quality.inspect", "quality.rework", "quality.release"] },
+  DISPATCH_OFFICER: { name: "Dispatch Officer", landing: "/dispatch", perms: ["dispatch.read", "dispatch.create", "dispatch.confirm", "dispatch.reverse", "orders.read", "quality.read"] },
+  BUYER: { name: "Buyer", landing: "/portal", perms: ["portal.read", "orders.create", "orders.read"] },
 };
 
 export const DEMO_USERS: DemoUser[] = [
-  { id: "u-admin", name: "Nisha Menon", email: "admin@everest.demo", roles: ["ADMIN"], permissions: ROLE_PERMISSIONS.ADMIN.perms, landing: "/admin/users" },
-  { id: "u-manager", name: "Arun Mehta", email: "manager@everest.demo", roles: ["MANAGER"], permissions: ROLE_PERMISSIONS.MANAGER.perms, landing: "/dashboard" },
-  { id: "u-manager-planner", name: "Kavita Rao", email: "planning.manager@everest.demo", roles: ["MANAGER", "PLANNER"], permissions: [...new Set([...ROLE_PERMISSIONS.MANAGER.perms, ...ROLE_PERMISSIONS.PLANNER.perms])], landing: "/dashboard" },
-  { id: "u-planner", name: "Sanjay Patil", email: "planner@everest.demo", roles: ["PLANNER"], permissions: ROLE_PERMISSIONS.PLANNER.perms, landing: "/production" },
-  { id: "u-operator", name: "Ravi Kumar", email: "operator@everest.demo", roles: ["OPERATOR"], permissions: ROLE_PERMISSIONS.OPERATOR.perms, landing: "/my-work" },
-  { id: "u-store", name: "Leela Das", email: "store@everest.demo", roles: ["STOREKEEPER"], permissions: ROLE_PERMISSIONS.STOREKEEPER.perms, landing: "/inventory" },
-  { id: "u-inspector", name: "Priya Iyer", email: "inspector@everest.demo", roles: ["INSPECTOR"], permissions: ROLE_PERMISSIONS.INSPECTOR.perms, landing: "/quality" },
-  { id: "u-dispatch", name: "Sameer Khan", email: "dispatch@everest.demo", roles: ["DISPATCH"], permissions: ROLE_PERMISSIONS.DISPATCH.perms, landing: "/dispatch" },
-  { id: "u-hr", name: "Maya Thomas", email: "hr@everest.demo", roles: ["HR"], permissions: ROLE_PERMISSIONS.HR.perms, landing: "/hr/attendance" },
-  { id: "u-finance", name: "Devika Shah", email: "finance@everest.demo", roles: ["FINANCE"], permissions: ROLE_PERMISSIONS.FINANCE.perms, landing: "/finance" },
-  { id: "u-buyer", name: "Anita Textiles", email: "buyer@everest.demo", roles: ["BUYER"], permissions: ROLE_PERMISSIONS.BUYER.perms, landing: "/portal", buyerId: "buyer-01" },
+  { id: "u-owner", name: "Nisha Menon (Owner)", email: "owner@everest.demo", roles: ["OWNER"], permissions: ROLE_PERMISSIONS.OWNER.perms, landing: "/dashboard" },
+  { id: "u-supervisor", name: "Arun Mehta (Supervisor)", email: "supervisor@everest.demo", roles: ["SUPERVISOR"], permissions: ROLE_PERMISSIONS.SUPERVISOR.perms, landing: "/dashboard" },
+  { id: "u-operator-spinning", name: "Ravi Kumar (Spinning Operator)", email: "operator.spinning@everest.demo", roles: ["MACHINE_OPERATOR"], permissions: ROLE_PERMISSIONS.MACHINE_OPERATOR.perms, landing: "/my-work" },
+  { id: "u-operator-weaving", name: "Suresh Patel (Weaving Operator)", email: "operator.weaving@everest.demo", roles: ["MACHINE_OPERATOR"], permissions: ROLE_PERMISSIONS.MACHINE_OPERATOR.perms, landing: "/my-work" },
+  { id: "u-operator-dyeing", name: "Kavita Rao (Dyeing Operator)", email: "operator.dyeing@everest.demo", roles: ["MACHINE_OPERATOR"], permissions: ROLE_PERMISSIONS.MACHINE_OPERATOR.perms, landing: "/my-work" },
+  { id: "u-inspector", name: "Priya Iyer (Quality Inspector)", email: "inspector@everest.demo", roles: ["QUALITY_INSPECTOR"], permissions: ROLE_PERMISSIONS.QUALITY_INSPECTOR.perms, landing: "/quality" },
+  { id: "u-dispatch", name: "Sameer Khan (Dispatch Officer)", email: "dispatch@everest.demo", roles: ["DISPATCH_OFFICER"], permissions: ROLE_PERMISSIONS.DISPATCH_OFFICER.perms, landing: "/dispatch" },
+  { id: "u-buyer", name: "Anita Textiles (Buyer)", email: "buyer@everest.demo", roles: ["BUYER"], permissions: ROLE_PERMISSIONS.BUYER.perms, landing: "/portal", buyerId: "buyer-01" },
 ];
 
 export function hasPermission(user: DemoUser | null, permission: Permission): boolean {

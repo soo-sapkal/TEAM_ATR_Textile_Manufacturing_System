@@ -1,0 +1,18 @@
+supabase url : https://xaqbisnaetgsjiortzgi.supabase.co
+publishable key : sb_publishable_Q_JSQI-Lm8vfqBj5taekeg_n3KdjW4M
+cli setup commands: supabase login
+supabase init
+supabase link --project-ref xaqbisnaetgsjiortzgi
+
+secret key :sb_secret_IjjOPvnK-DuOpwIhmfM3Hg_IHPqiS2g
+anon public : eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhhcWJpc25hZXRnc2ppb3J0emdpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE2MjM3MTQsImV4cCI6MjEwNzE5OTcxNH0.3lpphpqY2QkMu5k6RMqa7GYU25n4FxY_0ugnETB7Zww
+
+There are too many existing roles in this current system
+There is too much confusion lets sort some things. See i want to keep only these roles - Buyer, Machine operator, supervisor(whole factory incharge), owner of factory, dispatch officer, quality inspector. 
+Buyer - he can only create order, and track order
+Machine operator - He/she will be a employee working on any of these 3 types of machines. It will daily see the task that in this shift on what machine what task is there like on machine 3 dyeing machine he wants to colour the roll of this much quantity. He have to just mark completed with actual number of output produced and other details. See each person will not have skills to operate all machines - dyeing, spinning, weaving, so each person has a specific skill. he can track his performance, track salary, leaves
+Supervisor - he is the main incharge of factory after owner. He can create and see orders, see inventory of produced goods, can see and add stock in inventory of raw materials, based on pending orders he sees how much shortage is there and what needs to be produced, he can assign multiple tasks to each machine operator in a shift, also he can analyze past shifts, analyze performance of emps, CRUD on machines(also add avg capabailty of production per hour), performance of machines, add newly pruchased raw materials, See visualisation in which there will be flow like raw material inventory->spining->weaving->dyeing->quality checking->final good inventory, so at each points he can see how many goods are there.     
+Owner - crud employee(also skill), salary of employee, see inventory, see raw materails, see orders, see financials, see machine overview, 
+Dispatch officer - See order details -> check in final produced goods if there->loads into truck->dispatched. He also sees deadlines given by customer means a order is to be compelted by what day
+Quality inspector - Sees how much goods are there which is done till dyeing -> scans qr on those rolls -> enter the quality report details ->sends to fully finished good inventory(if good)
+So the flow of factory will be yarn is purchased as raw material purchased enters the warehouse ->sent for spining->stored in separate section of warehouse->take that spin completed material->weaving mahcine->store in separate section of warehouse->take that weaved material->dyeing machine->store in separate section of warehouse->quality checking->final good inventory (separate section of warehouse)->dispatch inspector will take final good and load in truck as per orders.

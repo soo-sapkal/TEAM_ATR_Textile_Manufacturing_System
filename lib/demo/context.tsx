@@ -1,9 +1,10 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { DEMO_USERS } from "@/lib/auth/permissions";
 import { applyDemoCommand } from "@/lib/demo/commands";
 import { createDemoCommandAdapter } from "@/lib/api/adapter";
+import { fetchSupabaseData } from "@/lib/supabase/adapter";
 import { seedData } from "@/lib/demo/seed";
 import type { DemoData, DemoUser } from "@/lib/domain/types";
 
@@ -66,6 +67,25 @@ export function DemoProvider({ children }: { children: ReactNode }) {
   const sessionUserId = useSyncExternalStore(subscribeSession, getSessionUserId, getServerSessionUserId);
   const ready = useSyncExternalStore(subscribeReady, getClientReady, getServerReady);
   const user = useMemo(() => DEMO_USERS.find((candidate) => candidate.id === sessionUserId) ?? null, [sessionUserId]);
+
+  useEffect(() => {
+    fetchSupabaseData().then((dbData) => {
+      if (Object.keys(dbData).length > 0) {
+        setData((current) => {
+          const merged = { ...current };
+          if (dbData.orders && dbData.orders.length > 0) merged.orders = dbData.orders;
+          if (dbData.machines && dbData.machines.length > 0) merged.machines = dbData.machines;
+          if (dbData.rolls && dbData.rolls.length > 0) merged.rolls = dbData.rolls;
+          if (dbData.shipments && dbData.shipments.length > 0) merged.shipments = dbData.shipments;
+          if (dbData.operations && dbData.operations.length > 0) merged.operations = dbData.operations;
+          if (dbData.yarnItems && dbData.yarnItems.length > 0) merged.yarnItems = dbData.yarnItems;
+          if (dbData.yarnBatches && dbData.yarnBatches.length > 0) merged.yarnBatches = dbData.yarnBatches;
+          dataRef.current = merged;
+          return merged;
+        });
+      }
+    });
+  }, []);
 
   const toast = useCallback((title: string, detail?: string, tone: ToastMessage["tone"] = "info") => {
     const id = crypto.randomUUID();
