@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { DEMO_USERS } from "@/lib/auth/permissions";
 import { applyDemoCommand } from "@/lib/demo/commands";
 import { createDemoCommandAdapter } from "@/lib/api/adapter";
-import { seedData } from "@/lib/demo/seed";
+
 import type { DemoData, DemoUser } from "@/lib/domain/types";
 
 export interface ToastMessage { id: string; title: string; detail?: string; tone: "success" | "warning" | "error" | "info" }
@@ -56,7 +56,23 @@ function getServerReady(): boolean {
 }
 
 function cloneSeed(): DemoData {
-  return structuredClone(seedData);
+  return {
+    orders: [],
+    yarnItems: [],
+    yarnBatches: [],
+    machines: [],
+    rolls: [],
+    shipments: [],
+    operations: [],
+    yarnMovements: [],
+    outputEvents: [],
+    inspectionEvents: [],
+    reworkEvents: [],
+    dispatchEvents: [],
+    machineEvents: [],
+    processedCommandKeys: [],
+    notifications: []
+  };
 }
 
 export function DemoProvider({ children }: { children: ReactNode }) {
