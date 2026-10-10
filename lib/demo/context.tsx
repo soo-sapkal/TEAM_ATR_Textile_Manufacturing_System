@@ -63,8 +63,10 @@ export function DemoProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<DemoData>(cloneSeed);
   const dataRef = useRef(data);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
-  const ready = useSyncExternalStore(subscribeReady, getClientReady, getServerReady);
+  const clientReady = useSyncExternalStore(subscribeReady, getClientReady, getServerReady);
   const [user, setUser] = useState<DemoUser | null>(null);
+  const [isAuthLoaded, setIsAuthLoaded] = useState(false);
+  const ready = clientReady && isAuthLoaded;
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -77,7 +79,8 @@ export function DemoProvider({ children }: { children: ReactNode }) {
           setUser(null);
         }
       })
-      .catch(() => setUser(null));
+      .catch(() => setUser(null))
+      .finally(() => setIsAuthLoaded(true));
   }, []);
 
   const toast = useCallback((title: string, detail?: string, tone: ToastMessage["tone"] = "info") => {
