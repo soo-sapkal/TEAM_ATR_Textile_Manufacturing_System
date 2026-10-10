@@ -52,6 +52,7 @@ export const ROLE_NAVIGATION: Record<string, { label: string; items: { label: st
     { label: "Overview", items: [{ label: "Dashboard", href: "/owner/dashboard", icon: "grid" }] },
     { label: "Production", items: [
       { label: "Orders", href: "/owner/orders", icon: "orders" },
+        { label: "New Order", href: "/owner/orders/new", icon: "plus" },
       { label: "Plan & Assign", href: "/owner/production", icon: "production" },
       { label: "Factory Flow", href: "/owner/factory-flow", icon: "grid" }
     ] },
@@ -69,6 +70,7 @@ export const ROLE_NAVIGATION: Record<string, { label: string; items: { label: st
     { label: "Overview", items: [{ label: "Dashboard", href: "/supervisor/dashboard", icon: "grid" }] },
     { label: "Production", items: [
       { label: "Orders", href: "/supervisor/orders", icon: "orders" },
+        { label: "New Order", href: "/supervisor/orders/new", icon: "plus" },
       { label: "Plan & Assign", href: "/supervisor/production", icon: "production" },
       { label: "Factory Flow", href: "/supervisor/factory-flow", icon: "grid" }
     ] },
@@ -103,7 +105,8 @@ export const ROLE_NAVIGATION: Record<string, { label: string; items: { label: st
   BUYER: [
     { label: "Purchasing", items: [
       { label: "Dashboard", href: "/buyer/dashboard", icon: "grid" },
-      { label: "Track Orders", href: "/buyer/orders", icon: "orders" },
+      { label: "Product Catalog", href: "/products", icon: "box" },
+        { label: "Track Orders", href: "/buyer/orders", icon: "orders" },
       { label: "New Order", href: "/buyer/orders/new", icon: "plus" }
     ] }
   ]

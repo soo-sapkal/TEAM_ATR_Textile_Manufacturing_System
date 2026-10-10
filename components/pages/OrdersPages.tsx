@@ -2,7 +2,7 @@
 
 /* eslint-disable react/jsx-key -- These JSX values are typed DataTable row descriptors; DataTable creates keyed table rows/cells, while direct rendered lists keep explicit entity keys. */
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { Activity, ArrowLeft, ArrowRight, Check, CircleDollarSign, ClipboardList, FilePlus2, PackageCheck, Plus, Search, Truck } from "lucide-react";
 import Decimal from "decimal.js";
@@ -15,7 +15,7 @@ import type { Order } from "@/lib/domain/types";
 import { orderDraftSchema } from "@/lib/domain/schemas";
 
 export function OrdersPage() {
-  const { data } = useDemo();
+  const { data, user } = useDemo();
   const [filter, setFilter] = useState("ALL");
   const [search, setSearch] = useState("");
   const orders = useMemo(() => data.orders.filter((order) => {
@@ -26,11 +26,11 @@ export function OrdersPage() {
   }), [data.orders, search, filter]);
   const openByUnit = [...new Set(data.orders.map((order) => order.unit))].map((unit) => formatQty(data.orders.filter((order) => order.unit === unit).reduce((sum, order) => sum.plus(order.remaining), new Decimal(0)).toFixed(3), unit, 0));
   return <>
-    <PageHeader eyebrow="Make & move · customer commitment" title="Orders" description="Order quantities stay in their own unit. Track due date, production, accepted fabric, reservations, and dispatched balance without guessing." actions={<Can perm="orders.create"><LinkButton href="/orders/new" variant="primary"><FilePlus2 size={15}/> Create order</LinkButton></Can>} />
+    <PageHeader eyebrow="Make & move · customer commitment" title="Orders" description="Order quantities stay in their own unit. Track due date, production, accepted fabric, reservations, and dispatched balance without guessing." actions={<Can perm="orders.create"><LinkButton href={`${user?.role === "BUYER" ? "/buyer" : ""}/orders/new`} variant="primary"><FilePlus2 size={15}/> Create order</LinkButton></Can>} />
     <div className="stat-grid"><div className="stat-card stat-card--indigo"><div className="stat-card__top">Active orders</div><strong>{data.orders.length}</strong><div className="stat-card__bottom">all seeded examples</div></div><div className="stat-card stat-card--madder"><div className="stat-card__top">At risk</div><strong>{data.orders.filter((order) => order.atRisk).length}</strong><div className="stat-card__bottom">date or yarn readiness</div></div><div className="stat-card stat-card--neem"><div className="stat-card__top">Ready to dispatch</div><strong>{data.orders.filter((order) => order.displayStatus === "READY_FOR_DISPATCH").length}</strong><div className="stat-card__bottom">accepted rolls only</div></div><div className="stat-card stat-card--cotton"><div className="stat-card__top">Open balance</div><strong>{openByUnit.join(" · ")}</strong><div className="stat-card__bottom">each unit totals separately</div></div></div>
     <div className="filter-row" role="group" aria-label="Filter orders">{["ALL", "AT_RISK", "CONFIRMED", "IN_PRODUCTION", "READY_FOR_DISPATCH", "PLANNED"].map((item) => <button key={item} className={`filter-chip${filter === item ? " filter-chip--active" : ""}`} onClick={() => setFilter(item)}>{item.replaceAll("_", " ")}</button>)}<label className="search-box" style={{ width: 230, marginLeft: "auto" }}><Search size={14}/><input aria-label="Search orders" placeholder="Find an order…" value={search} onChange={(event) => setSearch(event.target.value)}/></label></div>
     <Card className="card--table" title="Order book" action={<Tag>{orders.length} shown</Tag>}>
-      <DataTable headers={["Order / buyer", "Product", "Due", "Priority", "Production", "Accepted", "State", ""]} rows={orders.map((order) => [<div><Link href={`/orders/${order.id}`} className="cell-primary code">{order.code}</Link><span className="cell-secondary">{order.buyer}</span></div>, <div><span className="cell-primary">{order.product}</span><span className="cell-secondary">{order.colour}</span></div>, <div><span className="cell-primary">{formatDate(order.due)}</span>{order.atRisk && <span className="cell-secondary" style={{ color: "var(--madder)" }}>At risk</span>}</div>, <StatusBadge status={order.priority}/>, <div style={{ minWidth: 112 }}><Meter value={order.produced} total={order.ordered} label="Produced" showNumbers={false}/><span className="cell-secondary num">{formatQty(order.produced, order.unit, 0)} / {formatQty(order.ordered, order.unit, 0)}</span></div>, formatQty(order.accepted, order.unit, 0), <StatusBadge status={order.displayStatus}/>, <Link href={`/orders/${order.id}`} className="btn btn--secondary btn--sm">Open <ArrowRight size={12}/></Link>])} empty={<EmptyState title="No matching order" detail="Change filters or search for another order."/>}/>
+      <DataTable headers={["Order / buyer", "Product", "Due", "Priority", "Production", "Accepted", "State", ""]} rows={orders.map((order) => [<div><Link href={`${user?.role === "BUYER" ? "/buyer" : user?.role === "OWNER" ? "/owner" : ""}/orders/${order.id}`} className="cell-primary code">{order.code}</Link><span className="cell-secondary">{order.buyer}</span></div>, <div><span className="cell-primary">{order.product}</span><span className="cell-secondary">{order.colour}</span></div>, <div><span className="cell-primary">{formatDate(order.due)}</span>{order.atRisk && <span className="cell-secondary" style={{ color: "var(--madder)" }}>At risk</span>}</div>, <StatusBadge status={order.priority}/>, <div style={{ minWidth: 112 }}><Meter value={order.produced} total={order.ordered} label="Produced" showNumbers={false}/><span className="cell-secondary num">{formatQty(order.produced, order.unit, 0)} / {formatQty(order.ordered, order.unit, 0)}</span></div>, formatQty(order.accepted, order.unit, 0), <StatusBadge status={order.displayStatus}/>, <Link href={`${user?.role === "BUYER" ? "/buyer" : user?.role === "OWNER" ? "/owner" : ""}/orders/${order.id}`} className="btn btn--secondary btn--sm">Open <ArrowRight size={12}/></Link>])} empty={<EmptyState title="No matching order" detail="Change filters or search for another order."/>}/>
     </Card>
     <InfoStrip tone="info" title="Quantities never cross units.">Meters (M) and kilograms (KG) have separate balances and progress bars. Yarn availability is checked independently in KG before plan release.</InfoStrip>
   </>;
@@ -99,7 +99,7 @@ export function NewOrderPage() {
   }
   
   return <>
-    <PageHeader eyebrow="Customer commitment" title="Create an order" description="Capture the buyer's request first. Approval, material reservation, and production planning remain separate steps." actions={<LinkButton href="/orders" variant="secondary"><ArrowLeft size={14}/> Order book</LinkButton>} />
+    <PageHeader eyebrow="Customer commitment" title="Create an order" description="Capture the buyer's request first. Approval, material reservation, and production planning remain separate steps." actions={<LinkButton href={`${user?.role === "BUYER" ? "/buyer" : user?.role === "OWNER" ? "/owner" : ""}/orders`} variant="secondary"><ArrowLeft size={14}/> Order book</LinkButton>} />
     <div className="two-pane"><form onSubmit={submit} className="card stack"><div className="card__head"><h2>Order terms</h2><StatusBadge status="DRAFT"/></div>
       <div className="form-grid">
         <Field label="Buyer"><SelectInput value={buyer} onChange={(event) => setBuyer(event.target.value)}><option>Mysore House Textiles</option><option>Kaveri Apparel Co.</option><option>Saffron Living</option></SelectInput></Field><Field label="Requested due date"><TextInput type="date" value={due} onChange={(event) => setDue(event.target.value)} required/></Field>
@@ -143,15 +143,15 @@ export function NewOrderPage() {
 }
 
 export function OrderDetailPage({ id }: { id: string }) {
-  const { data, toast } = useDemo();
+  const { data, toast, user } = useDemo();
   const order = data.orders.find((item) => item.id === id || item.code === id);
   const [reason, setReason] = useState("");
-  if (!order) return <><PageHeader title="Order not found" description="We could not find that demo order."/><EmptyState title="No order record" action={<LinkButton href="/orders">Return to order book</LinkButton>}/></>;
+  if (!order) return <><PageHeader title="Order not found" description="We could not find that demo order."/><EmptyState title="No order record" action={<LinkButton href={`${user?.role === "BUYER" ? "/buyer" : user?.role === "OWNER" ? "/owner" : ""}/orders`}>Return to order book</LinkButton>}/></>;
   const percent = clampPercent(order.produced, order.ordered);
   const costComplete = new Decimal(order.recordedCost).gt(0);
   function staged(message: string) { toast(message, "This action is only simulated in the preview; no state change reaches the mill system.", "warning"); }
   return <>
-    <PageHeader eyebrow="Order command page" title={order.code} description={`${order.buyer} · ${order.product} · ${order.colour}`} actions={<><LinkButton href="/orders" variant="secondary"><ArrowLeft size={14}/> Orders</LinkButton><Can perm="finance.read"><LinkButton href="/finance" variant="secondary"><CircleDollarSign size={14}/> Cost view</LinkButton></Can></>} meta={<><StatusBadge status={order.displayStatus}/><StatusBadge status={order.priority}/><Tag>Due {formatDate(order.due)}</Tag>{order.atRisk && <StatusBadge status="HIGH" label="At risk"/>}</>} />
+    <PageHeader eyebrow="Order command page" title={order.code} description={`${order.buyer} · ${order.product} · ${order.colour}`} actions={<><LinkButton href={`${user?.role === "BUYER" ? "/buyer" : user?.role === "OWNER" ? "/owner" : ""}/orders`} variant="secondary"><ArrowLeft size={14}/> Orders</LinkButton><Can perm="finance.read"><LinkButton href="/finance" variant="secondary"><CircleDollarSign size={14}/> Cost view</LinkButton></Can></>} meta={<><StatusBadge status={order.displayStatus}/><StatusBadge status={order.priority}/><Tag>Due {formatDate(order.due)}</Tag>{order.atRisk && <StatusBadge status="HIGH" label="At risk"/>}</>} />
     {order.atRisk && <InfoStrip tone="danger" title="Commitment at risk.">Material readiness is short, due date is earlier than expected completion, or both. Review the active plan and record an owner decision.</InfoStrip>}
     <div className="stat-grid"><StatCard label="Ordered" value={formatQty(order.ordered, order.unit, 0)} detail="Buyer commitment" icon={ClipboardList}/><StatCard label="Produced" value={formatQty(order.produced, order.unit, 0)} detail={`${percent}% of requested quantity`} icon={Activity}/><StatCard label="Accepted" value={formatQty(order.accepted, order.unit, 0)} detail="QC accepted only" icon={PackageCheck} tone="neem"/><StatCard label="Available for dispatch" value={formatQty(order.available, order.unit, 0)} detail={`${order.reserved} reserved · ${order.dispatched} dispatched`} icon={Truck} tone={order.hasQualityHold ? "turmeric" : "cotton"}/></div>
     <div className="page-grid">
