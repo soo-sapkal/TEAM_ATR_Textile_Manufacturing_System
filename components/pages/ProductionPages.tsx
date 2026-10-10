@@ -45,7 +45,7 @@ function ProductionBoard() {
 }
 
 function OperationCard({ operation, onOrderClick }: { operation: Operation; onOrderClick?: (code: string) => void }) {
-  const { data, user, act } = useDemo();
+  const { data, user, act, toast } = useDemo();
   const order = data.orders.find((o) => o.code === operation.orderCode);
   const [selectedMachine, setSelectedMachine] = useState(operation.machineCode ?? "");
   const [selectedShift, setSelectedShift] = useState(operation.shift ?? "");

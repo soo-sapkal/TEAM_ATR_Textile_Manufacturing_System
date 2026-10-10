@@ -39,7 +39,7 @@ function MachineBoard() {
 }
 
 function MachineDetail({ id }: { id: string }) {
-  const { data, act, user } = useDemo();
+  const { data, act, user, toast } = useDemo();
   const machine = data.machines.find((candidate) => candidate.id === id || candidate.code === id);
   const [reason, setReason] = useState("");
   const [showDowntime, setShowDowntime] = useState(false);

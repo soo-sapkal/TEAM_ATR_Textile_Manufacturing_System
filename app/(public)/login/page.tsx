@@ -50,12 +50,14 @@ export default function LoginPage() {
         "BUYER": "buyer"
       };
 
-      const folder = roleMap[data.user.role] || "dashboard";
+      const primaryRole = data.user?.roles?.[0] || "SUPERVISOR";
+      const folder = roleMap[primaryRole];
+      const targetPath = folder ? `/${folder}/dashboard` : "/dashboard";
       const next = new URLSearchParams(window.location.search).get("next");
       
       setTimeout(() => {
-        router.push(next && next.startsWith("/") && !next.startsWith("//") ? next : `/${folder}/dashboard`);
-        window.location.href = `/${folder}/dashboard`;
+        router.push(next && next.startsWith("/") && !next.startsWith("//") ? next : targetPath);
+        window.location.href = targetPath;
       }, 300);
       
     } catch (err) {
@@ -92,14 +94,16 @@ export default function LoginPage() {
         "BUYER": "buyer"
       };
 
-      const folder = roleMap[data.user.role] || "dashboard";
+      const primaryRole = data.user?.roles?.[0] || "SUPERVISOR";
+      const folder = roleMap[primaryRole];
+      const targetPath = folder ? `/${folder}/dashboard` : "/dashboard";
       const next = new URLSearchParams(window.location.search).get("next");
       
       // Give the system a tiny bit of time to set the cookie before navigating
       setTimeout(() => {
-        router.push(next && next.startsWith("/") && !next.startsWith("//") ? next : `/${folder}/dashboard`);
+        router.push(next && next.startsWith("/") && !next.startsWith("//") ? next : targetPath);
         // Refresh context
-        window.location.href = `/${folder}/dashboard`;
+        window.location.href = targetPath;
       }, 300);
       
     } catch (err) {

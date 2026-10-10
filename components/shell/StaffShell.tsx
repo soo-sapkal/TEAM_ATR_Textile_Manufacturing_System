@@ -8,7 +8,7 @@ import Decimal from "decimal.js";
 import { BrandMark, Button, StatusBadge } from "@/components/ui/primitives";
 import { ICONS } from "@/components/ui/icons";
 import { useDemo } from "@/lib/demo/context";
-import { DEMO_USERS, hasAnyPermission, ROLE_NAVIGATION } from "@/lib/auth/permissions";
+import { DEMO_USERS, hasAnyPermission, ROLE_NAVIGATION, UNIVERSAL_NAVIGATION } from "@/lib/auth/permissions";
 import { requiredPermissions, titleForPath } from "@/lib/auth/route-access";
 
 function initials(name: string) { return name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase(); }
@@ -53,7 +53,7 @@ export function StaffShell({ children }: { children: React.ReactNode }) {
 
   const permission = user?.permissions ?? [];
   const primaryRole = user?.roles[0] || "SUPERVISOR";
-  const navSections = ROLE_NAVIGATION[primaryRole] || [];
+  const navSections = ROLE_NAVIGATION[primaryRole] || UNIVERSAL_NAVIGATION;
   console.log("Forcing recompile for StaffShell to clear cache");
   const visibleSections = navSections.map((section) => ({ ...section, items: section.items.filter((item) => !item.any || hasAnyPermission(user, item.any)) })).filter((section) => section.items.length > 0);
   const unreadCount = data.notifications.filter((notice) => notice.unread).length;

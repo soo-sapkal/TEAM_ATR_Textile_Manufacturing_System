@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
       name: (payload as any).name,
       email: (payload as any).email,
       roles: [(payload as any).role],
-      permissions: [] // or mock permissions if needed
+      permissions: (payload as any).permissions || []
     }
   });
 }

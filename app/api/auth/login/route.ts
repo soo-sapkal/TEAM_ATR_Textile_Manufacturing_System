@@ -11,7 +11,12 @@ export async function POST(request: Request) {
   try {
     const { email, password } = await request.json();
 
-    const { rows } = await pool.query("SELECT * FROM users WHERE email = $1", [email.trim().toLowerCase()]);
+    const { rows } = await pool.query(`
+      SELECT u.*, r.name as role_name 
+      FROM users u 
+      LEFT JOIN roles r ON u.role_id = r.id 
+      WHERE u.email = $1
+    `, [email.trim().toLowerCase()]);
     const user = rows[0];
 
     if (!user) {
@@ -23,14 +28,38 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
     }
 
+    // Fetch permissions from role_permissions
+    let permissions: string[] = [];
+    if (user.role_id) {
+      const permRows = await pool.query(`
+        SELECT p.action 
+        FROM role_permissions rp 
+        JOIN permissions p ON rp.permission_id = p.id 
+        WHERE rp.role_id = $1
+      `, [user.role_id]);
+      permissions = permRows.rows.map(r => r.action);
+    }
+
+    const resolvedRole = user.role_name || user.role || 'GUEST';
+
     const token = await signToken({
       id: user.id,
       email: user.email,
       name: user.name,
-      role: user.role
+      role: resolvedRole,
+      permissions
     });
 
-    const response = NextResponse.json({ success: true, user: { id: user.id, email: user.email, name: user.name, role: user.role } });
+    const response = NextResponse.json({ 
+      success: true, 
+      user: { 
+        id: user.id, 
+        email: user.email, 
+        name: user.name, 
+        roles: [resolvedRole],
+        permissions 
+      } 
+    });
     
     response.cookies.set("auth_token", token, {
       httpOnly: true,

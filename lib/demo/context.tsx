@@ -93,7 +93,7 @@ export function DemoProvider({ children }: { children: ReactNode }) {
       .then((r) => r.json())
       .then((d) => {
         if (d.user) {
-          const perms = DEMO_USERS.find(u => u.roles.includes(d.user.roles[0]))?.permissions || [];
+          const perms = d.user.permissions?.length ? d.user.permissions : (DEMO_USERS.find(u => u.roles.includes(d.user.roles[0]))?.permissions || []);
           setUser({ ...d.user, permissions: perms, landing: "/" });
         } else {
           setUser(null);

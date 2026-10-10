@@ -1,24 +1,40 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase/client";
+import { cookies } from "next/headers";
+import { Pool } from "pg";
+import { verifyToken } from "@/lib/auth/auth";
 import { snakeToCamel } from "@/lib/supabase/adapter";
 
-export async function GET() {
-  const [shipmentsRes, eventsRes, rollsRes] = await Promise.all([
-    supabase.from("shipments").select("*").order("created_at", { ascending: false }),
-    supabase.from("dispatch_events").select("*").order("recorded_at", { ascending: false }),
-    supabase.from("fabric_rolls").select("*").order("recorded_at", { ascending: false })
-  ]);
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL || "postgresql://postgres.xaqbisnaetgsjiortzgi:sohamsapkal@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres",
+});
 
-  if (shipmentsRes.error || eventsRes.error || rollsRes.error) {
-    return NextResponse.json({ success: false, error: "Failed to fetch dispatch data" }, { status: 500 });
+export async function GET() {
+  const cookieStore = await cookies();
+  const token = cookieStore.get("auth_token")?.value;
+  if (!token) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  
+  const payload = await verifyToken(token) as any;
+  if (!payload || !payload.permissions?.includes("dispatch.read")) {
+    return NextResponse.json({ success: false, error: "Forbidden: Requires dispatch.read permission" }, { status: 403 });
   }
 
-  return NextResponse.json({
-    success: true,
-    data: {
-      shipments: snakeToCamel(shipmentsRes.data),
-      dispatchEvents: snakeToCamel(eventsRes.data),
-      rolls: snakeToCamel(rollsRes.data) // Fabric rolls need to be loaded so they can be assigned to shipments
-    }
-  });
+  try {
+    const [shipmentsRes, eventsRes, rollsRes] = await Promise.all([
+      pool.query("SELECT * FROM shipments ORDER BY created_at DESC"),
+      pool.query("SELECT * FROM dispatch_events ORDER BY recorded_at DESC"),
+      pool.query("SELECT * FROM fabric_rolls ORDER BY recorded_at DESC")
+    ]);
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        shipments: snakeToCamel(shipmentsRes.rows),
+        dispatchEvents: snakeToCamel(eventsRes.rows),
+        rolls: snakeToCamel(rollsRes.rows)
+      }
+    });
+  } catch (error) {
+    console.error(error);
+    return NextResponse.json({ success: false, error: "Failed to fetch dispatch data" }, { status: 500 });
+  }
 }

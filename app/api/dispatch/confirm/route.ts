@@ -1,90 +1,81 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase/client";
+import { cookies } from "next/headers";
+import { Pool } from "pg";
+import { verifyToken } from "@/lib/auth/auth";
 import Decimal from "decimal.js";
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL || "postgresql://postgres.xaqbisnaetgsjiortzgi:sohamsapkal@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres",
+});
 
 export async function POST(req: Request) {
   try {
+    const cookieStore = await cookies();
+    const token = cookieStore.get("auth_token")?.value;
+    if (!token) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    
+    const payload = await verifyToken(token) as any;
+    if (!payload || !payload.permissions?.includes("dispatch.confirm")) {
+      return NextResponse.json({ success: false, error: "Forbidden: Requires dispatch.confirm" }, { status: 403 });
+    }
+
     const body = await req.json();
     const { shipmentId, actor } = body;
 
-    // 1. Fetch shipment and rolls
-    const { data: shipment, error: shipmentErr } = await supabase
-      .from("shipments")
-      .select("*")
-      .eq("id", shipmentId)
-      .single();
+    const shipmentRes = await pool.query("SELECT * FROM shipments WHERE id = $1", [shipmentId]);
+    const shipment = shipmentRes.rows[0];
 
-    if (shipmentErr || !shipment) throw new Error("Shipment not found");
+    if (!shipment) throw new Error("Shipment not found");
     if (shipment.status === "DISPATCHED") return NextResponse.json({ success: true });
 
-    const { data: rollsData, error: rollsErr } = await supabase
-      .from("fabric_rolls")
-      .select("*")
-      .eq("shipment_id", shipmentId);
+    const rollsRes = await pool.query("SELECT * FROM fabric_rolls WHERE shipment_id = $1", [shipmentId]);
+    const rollsData = rollsRes.rows;
 
-    if (rollsErr || !rollsData) throw new Error("Failed to fetch rolls");
+    if (!rollsData.length) throw new Error("Failed to fetch rolls");
 
-    // Generate pseudo-invoice number for demo
     const invoice = `INV-2026-${String(Math.floor(40 + Math.random() * 60)).padStart(4, "0")}`;
 
-    // 2. Update shipments to DISPATCHED
-    const { error: updateShipmentErr } = await supabase
-      .from("shipments")
-      .update({
-        status: "DISPATCHED",
-        invoice: invoice
-      })
-      .eq("id", shipmentId);
+    await pool.query(
+      "UPDATE shipments SET status = $1, invoice = $2 WHERE id = $3",
+      ["DISPATCHED", invoice, shipmentId]
+    );
 
-    if (updateShipmentErr) throw updateShipmentErr;
+    await pool.query(
+      "UPDATE fabric_rolls SET status = $1, location = $2 WHERE shipment_id = $3",
+      ["DISPATCHED", `In Transit (${shipment.vehicle || 'Unknown'})`, shipmentId]
+    );
 
-    // 3. Update rolls to DISPATCHED
-    const { error: rollUpdateErr } = await supabase
-      .from("fabric_rolls")
-      .update({
-        status: "DISPATCHED",
-        location: `In Transit (${shipment.vehicle || 'Unknown'})`
-      })
-      .eq("shipment_id", shipmentId);
+    const orderRes = await pool.query("SELECT * FROM orders WHERE code = $1", [shipment.order_code]);
+    const orderData = orderRes.rows[0];
 
-    if (rollUpdateErr) throw rollUpdateErr;
-
-    // 4. Update order
-    const { data: orderData, error: orderFetchErr } = await supabase
-      .from("orders")
-      .select("*")
-      .eq("code", shipment.order_code)
-      .single();
-
-    if (!orderFetchErr && orderData) {
+    if (orderData) {
       const newDispatched = new Decimal(orderData.dispatched || 0).plus(shipment.qty || 0);
       const remaining = Decimal.max(0, new Decimal(orderData.ordered || 0).minus(newDispatched));
       const displayStatus = remaining.eq(0) ? "COMPLETED" : "PARTIALLY_DISPATCHED";
 
-      await supabase
-        .from("orders")
-        .update({
-          dispatched: newDispatched.toNumber(),
-          remaining: remaining.toNumber(),
-          display_status: displayStatus
-        })
-        .eq("code", shipment.order_code);
+      await pool.query(
+        "UPDATE orders SET dispatched = $1, remaining = $2, display_status = $3 WHERE code = $4",
+        [newDispatched.toNumber(), remaining.toNumber(), displayStatus, shipment.order_code]
+      );
     }
 
-    // 5. Insert dispatch event
-    await supabase.from("dispatch_events").insert({
-      id: crypto.randomUUID(),
-      code: `EVT-DSP-${Math.floor(Date.now() / 1000)}`,
-      action: "CONFIRMED",
-      shipment_id: shipmentId,
-      shipment_code: shipment.code,
-      order_code: shipment.order_code,
-      roll_ids: rollsData.map(r => r.id),
-      quantity: shipment.qty,
-      unit: shipment.unit,
-      actor: actor || "System",
-      recorded_at: new Date().toISOString()
-    });
+    await pool.query(
+      `INSERT INTO dispatch_events (id, code, action, shipment_id, shipment_code, order_code, roll_ids, quantity, unit, actor, recorded_at) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [
+        crypto.randomUUID(), 
+        `EVT-DSP-${Math.floor(Date.now() / 1000)}`, 
+        "CONFIRMED", 
+        shipmentId, 
+        shipment.code, 
+        shipment.order_code, 
+        JSON.stringify(rollsData.map(r => r.id)), 
+        shipment.qty, 
+        shipment.unit, 
+        actor || payload.name || "System", 
+        new Date().toISOString()
+      ]
+    );
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
