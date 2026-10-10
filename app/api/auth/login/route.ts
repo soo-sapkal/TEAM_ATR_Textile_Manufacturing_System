@@ -42,11 +42,10 @@ export async function POST(request: Request) {
       permissions = permRows.rows.map(r => r.action);
     }
 
-    if (permissions.length === 0) {
-      // Fallback to static permissions if DB permissions are not configured yet
-      const { ROLE_PERMISSIONS } = await import("@/lib/auth/permissions");
-      permissions = ROLE_PERMISSIONS[resolvedRole] || [];
-    }
+    // Always merge static fallback permissions to ensure new permissions not yet seeded in DB are granted
+    const { ROLE_PERMISSIONS } = await import("@/lib/auth/permissions");
+    const staticPerms = ROLE_PERMISSIONS[resolvedRole]?.perms || [];
+    permissions = Array.from(new Set([...permissions, ...staticPerms]));
 
     const token = await signToken({
       id: user.id,
