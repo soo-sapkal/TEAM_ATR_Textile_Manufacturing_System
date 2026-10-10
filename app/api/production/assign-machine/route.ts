@@ -14,7 +14,12 @@ export async function POST(req: Request) {
     if (!token) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     
     const payload = await verifyToken(token) as any;
-    if (!payload || !payload.permissions?.includes("production.assign")) {
+    let permissions = payload?.permissions || [];
+    if (permissions.length === 0 && payload?.role) {
+      const { ROLE_PERMISSIONS } = await import("@/lib/auth/permissions");
+      permissions = ROLE_PERMISSIONS[payload.role] || [];
+    }
+    if (!payload || !permissions.includes("production.assign")) {
       return NextResponse.json({ success: false, error: "Forbidden: Requires production.assign permission" }, { status: 403 });
     }
 
@@ -43,3 +48,5 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: false, error: error.message }, { status: 400 });
   }
 }
+
+

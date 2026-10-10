@@ -14,7 +14,13 @@ export async function GET() {
   if (!token) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   
   const payload = await verifyToken(token) as any;
-  if (!payload || !payload.permissions?.includes("production.read")) {
+  let permissions = payload?.permissions || [];
+  if (permissions.length === 0 && payload?.role) {
+    const { ROLE_PERMISSIONS } = await import("@/lib/auth/permissions");
+    permissions = ROLE_PERMISSIONS[payload.role] || [];
+  }
+
+  if (!payload || !permissions.includes("production.read")) {
     return NextResponse.json({ success: false, error: "Forbidden: Requires production.read permission" }, { status: 403 });
   }
 
@@ -40,3 +46,5 @@ export async function GET() {
     return NextResponse.json({ success: false, error: "Failed to fetch production data" }, { status: 500 });
   }
 }
+
+

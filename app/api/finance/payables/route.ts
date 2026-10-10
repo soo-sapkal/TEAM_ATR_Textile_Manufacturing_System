@@ -1,32 +1,45 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase/client";
+import { cookies } from "next/headers";
+import { Pool } from "pg";
+import { verifyToken } from "@/lib/auth/auth";
 import { snakeToCamel } from "@/lib/supabase/adapter";
 
 export const dynamic = "force-dynamic";
 
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL || "postgresql://postgres.xaqbisnaetgsjiortzgi:sohamsapkal@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres",
+});
+
 export async function GET() {
-  const { data: bills, error: billsError } = await supabase
-    .from("supplier_bills")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  if (billsError) {
-    return NextResponse.json({ error: { code: billsError.code, message: billsError.message } }, { status: 500 });
+  const cookieStore = await cookies();
+  const token = cookieStore.get("auth_token")?.value;
+  if (!token) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  
+  const payload = await verifyToken(token) as any;
+  let permissions = payload?.permissions || [];
+  if (permissions.length === 0 && payload?.role) {
+    const { ROLE_PERMISSIONS } = await import("@/lib/auth/permissions");
+    permissions = ROLE_PERMISSIONS[payload.role] || [];
   }
 
-  const { data: payments, error: paymentsError } = await supabase
-    .from("supplier_payments")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  if (paymentsError) {
-    return NextResponse.json({ error: { code: paymentsError.code, message: paymentsError.message } }, { status: 500 });
+  if (!payload || !permissions.includes("finance.read")) {
+    return NextResponse.json({ success: false, error: "Forbidden: Requires finance.read permission" }, { status: 403 });
   }
 
-  return NextResponse.json({
-    data: {
-      supplierBills: bills.map(snakeToCamel),
-      supplierPayments: payments.map(snakeToCamel),
-    }
-  });
+  try {
+    const [billsRes, paymentsRes] = await Promise.all([
+      pool.query("SELECT * FROM supplier_bills ORDER BY created_at DESC"),
+      pool.query("SELECT * FROM supplier_payments ORDER BY created_at DESC")
+    ]);
+
+    return NextResponse.json({
+      data: {
+        supplierBills: billsRes.rows.map(snakeToCamel),
+        supplierPayments: paymentsRes.rows.map(snakeToCamel),
+      }
+    });
+  } catch (error) {
+    console.error("Finance Payables GET error:", error);
+    return NextResponse.json({ success: false, error: "Failed to fetch finance payables data" }, { status: 500 });
+  }
 }

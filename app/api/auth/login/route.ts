@@ -28,6 +28,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
     }
 
+    const resolvedRole = user.role_name || user.role || 'GUEST';
+
     // Fetch permissions from role_permissions
     let permissions: string[] = [];
     if (user.role_id) {
@@ -40,7 +42,11 @@ export async function POST(request: Request) {
       permissions = permRows.rows.map(r => r.action);
     }
 
-    const resolvedRole = user.role_name || user.role || 'GUEST';
+    if (permissions.length === 0) {
+      // Fallback to static permissions if DB permissions are not configured yet
+      const { ROLE_PERMISSIONS } = await import("@/lib/auth/permissions");
+      permissions = ROLE_PERMISSIONS[resolvedRole] || [];
+    }
 
     const token = await signToken({
       id: user.id,

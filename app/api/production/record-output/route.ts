@@ -15,7 +15,12 @@ export async function POST(req: Request) {
     if (!token) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     
     const payload = await verifyToken(token) as any;
-    if (!payload || !payload.permissions?.includes("production.execute")) {
+    let permissions = payload?.permissions || [];
+    if (permissions.length === 0 && payload?.role) {
+      const { ROLE_PERMISSIONS } = await import("@/lib/auth/permissions");
+      permissions = ROLE_PERMISSIONS[payload.role] || [];
+    }
+    if (!payload || !permissions.includes("production.execute")) {
       return NextResponse.json({ success: false, error: "Forbidden: Requires production.execute permission" }, { status: 403 });
     }
 
@@ -33,21 +38,21 @@ export async function POST(req: Request) {
     
     // Create output event
     await pool.query(
-      "INSERT INTO output_events (id, code, operation_id, kind, quantity, unit, actor, recorded_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-      [crypto.randomUUID(), `OUT-EVT-${Math.floor(Date.now() / 1000)}`, operationId, "GOOD", parsedGood.toNumber(), operation.unit, actor || "System", new Date().toISOString()]
+      "INSERT INTO output_events (id, code, operation_id, operation_code, kind, quantity, unit, actor, recorded_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+      [crypto.randomUUID(), `OUT-EVT-${Math.floor(Date.now() / 1000)}`, operationId,  operation.code, "GOOD", parsedGood.toNumber(), operation.unit, actor || "System", new Date().toISOString()]
     );
 
     if (parsedWaste.gt(0)) {
       await pool.query(
-        "INSERT INTO output_events (id, code, operation_id, kind, quantity, unit, actor, recorded_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-        [crypto.randomUUID(), `OUT-WST-${Math.floor(Date.now() / 1000)}`, operationId, "WASTE", parsedWaste.toNumber(), operation.unit, actor || "System", new Date().toISOString()]
+        "INSERT INTO output_events (id, code, operation_id, operation_code, kind, quantity, unit, actor, recorded_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        [crypto.randomUUID(), `OUT-WST-${Math.floor(Date.now() / 1000)}`, operationId,  operation.code, "WASTE", parsedWaste.toNumber(), operation.unit, actor || "System", new Date().toISOString()]
       );
     }
 
     if (parsedReject.gt(0)) {
       await pool.query(
-        "INSERT INTO output_events (id, code, operation_id, kind, quantity, unit, actor, recorded_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-        [crypto.randomUUID(), `OUT-REJ-${Math.floor(Date.now() / 1000)}`, operationId, "REJECT", parsedReject.toNumber(), operation.unit, actor || "System", new Date().toISOString()]
+        "INSERT INTO output_events (id, code, operation_id, operation_code, kind, quantity, unit, actor, recorded_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        [crypto.randomUUID(), `OUT-REJ-${Math.floor(Date.now() / 1000)}`, operationId,  operation.code, "REJECT", parsedReject.toNumber(), operation.unit, actor || "System", new Date().toISOString()]
       );
     }
 
@@ -71,3 +76,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: false, error: error.message }, { status: 400 });
   }
 }
+
+
+
