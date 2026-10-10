@@ -62,15 +62,101 @@ function FinanceEntriesPage() {
 
 function PaymentsPage() {
   const { data, toast } = useDemo();
-  const [orderCode, setOrderCode] = useState(data.orders[0]?.code ?? "");
+  const invoices = data.invoices || [];
+  const payments = data.payments || [];
+  
+  const [invoiceId, setInvoiceId] = useState("");
   const [amount, setAmount] = useState("");
   const [reference, setReference] = useState("");
-  const [paymentDate, setPaymentDate] = useState("2026-10-10");
-  const [staged, setStaged] = useState(false);
-  const order = data.orders.find((candidate) => candidate.code === orderCode);
-  const open = order ? Decimal.max(0,new Decimal(order.revenue).minus("86240.00")) : new Decimal(0);
-  function submit(event: FormEvent) { event.preventDefault(); const value = new Decimal(amount || 0); if (value.lte(0) || value.gt(open)) { toast(value.gt(open) ? "Payment exceeds outstanding balance" : "Payment must be positive", undefined, "error"); return; } if (reference.trim().length < 3) { toast("Payment reference required", undefined, "error"); return; } setStaged(true); toast("Payment staged", "No bank or payment system was contacted.", "warning"); }
-  return <><PageHeader eyebrow="Finance · receipts" title="Buyer payments" description="Match receipts against an order invoice, keep payment reference and date, and prevent overpayment at submission." actions={<LinkButton href="/finance" variant="secondary"><ArrowLeft size={14}/> Finance</LinkButton>} /><div className="two-pane"><form className="card stack" onSubmit={submit}><div className="card__head"><h2>Record a buyer receipt</h2><Tag>MANUAL REFERENCE</Tag></div><Field label="Order / invoice"><SelectInput value={orderCode} onChange={(event) => setOrderCode(event.target.value)}>{data.orders.map((item) => <option key={item.code} value={item.code}>{item.code} · {item.buyer}</option>)}</SelectInput></Field><div className="info-strip"><Wallet size={17}/><div><strong>Outstanding balance</strong><div>{formatMoney(open.toFixed(2))} · illustrative payment balance in demo</div></div></div><Field label="Amount · INR"><TextInput inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} required/></Field><div className="form-grid"><Field label="Payment date"><TextInput type="date" value={paymentDate} onChange={(event) => setPaymentDate(event.target.value)} required/></Field><Field label="Bank / UTR / receipt reference"><TextInput value={reference} onChange={(event) => setReference(event.target.value)} required minLength={3}/></Field></div><Field label="Notes"><TextArea placeholder="Short payment note…"/></Field><Button type="submit">Stage payment · demo</Button>{staged && <InfoStrip tone="warning">Session-only record; no bank was contacted and no payment was settled.</InfoStrip>}</form><Card title="Receipts register"><DataTable headers={["Receipt", "Order", "Date", "Amount", "Reference", "State"]} rows={[["RCPT-2026-0034","ORD-2026-0007","2026-10-09",formatMoney("86240.00"),"NEFT · 8281","MATCHED"],["RCPT-2026-0028","ORD-2026-0009","2026-10-06",formatMoney("123000.00"),"UTR · 1147","MATCHED"]].map(([code,order,date,value,ref,state]) => [<span className="code">{code}</span>, <Link href={`/orders/${String(order)}`}>{order}</Link>, formatDate(String(date)), value, ref, <StatusBadge status={String(state)}/>])}/></Card></div></>;
+  const [paymentMethod, setPaymentMethod] = useState("WIRE");
+  const [busy, setBusy] = useState(false);
+
+  const today = new Date();
+  const pastDue = invoices.filter(inv => inv.status !== "PAID" && new Date(inv.dueDate) < today);
+  const totalPastDue = pastDue.reduce((sum, inv) => sum.plus(inv.amountDue), new Decimal(0));
+  const thirtyDays = pastDue.filter(inv => (today.getTime() - new Date(inv.dueDate).getTime()) / (1000 * 3600 * 24) <= 30);
+  const thirtyDaysSum = thirtyDays.reduce((sum, inv) => sum.plus(inv.amountDue), new Decimal(0));
+  
+  const selectedInvoice = invoices.find(inv => inv.id === invoiceId);
+  const paidAgainstSelected = payments.filter(p => p.invoiceId === invoiceId).reduce((sum, p) => sum.plus(p.amountPaid), new Decimal(0));
+  const openBalance = selectedInvoice ? new Decimal(selectedInvoice.amountDue).minus(paidAgainstSelected) : new Decimal(0);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (busy || !selectedInvoice) return;
+    const value = new Decimal(amount || 0);
+    if (value.lte(0) || value.gt(openBalance)) {
+      toast("Invalid Amount", "Payment must be positive and not exceed outstanding balance.", "error");
+      return;
+    }
+    if (reference.trim().length < 3) {
+      toast("Reference Required", "A bank/UTR reference is required.", "error");
+      return;
+    }
+
+    setBusy(true);
+    const res = await fetch("/api/finance/payments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        invoiceId,
+        amountPaid: amount,
+        paymentMethod,
+        referenceNo: reference
+      })
+    });
+    
+    if (res.ok) {
+      toast("Payment Recorded", `Successfully recorded ${formatMoney(amount)}`, "success");
+      setAmount("");
+      setReference("");
+      window.location.reload();
+    } else {
+      toast("Payment Failed", "Could not record payment.", "error");
+    }
+    setBusy(false);
+  }
+
+  return <><PageHeader eyebrow="Finance · Accounts Receivable" title="AR Dashboard & Receipts" description="Track aging invoices, view outstanding balances, and record incoming buyer payments against open invoices." actions={<LinkButton href="/finance" variant="secondary"><ArrowLeft size={14}/> Finance Desk</LinkButton>} />
+  <div className="stat-grid" style={{ marginBottom: "2rem" }}>
+    <div className="stat-card stat-card--madder"><div className="stat-card__top">Total Past Due</div><strong>{formatMoney(totalPastDue.toFixed(2))}</strong><div className="stat-card__bottom">{pastDue.length} invoices overdue</div></div>
+    <div className="stat-card stat-card--turmeric"><div className="stat-card__top">1 - 30 Days Overdue</div><strong>{formatMoney(thirtyDaysSum.toFixed(2))}</strong><div className="stat-card__bottom">{thirtyDays.length} invoices</div></div>
+    <div className="stat-card stat-card--neem"><div className="stat-card__top">Pending Invoices</div><strong>{invoices.filter(i => i.status === "PENDING").length}</strong><div className="stat-card__bottom">Awaiting any payment</div></div>
+    <div className="stat-card stat-card--indigo"><div className="stat-card__top">Total Cash Collected</div><strong>{formatMoney(payments.reduce((sum, p) => sum.plus(p.amountPaid), new Decimal(0)).toFixed(2))}</strong><div className="stat-card__bottom">{payments.length} receipts</div></div>
+  </div>
+  <div className="two-pane">
+    <form className="card stack" onSubmit={submit}>
+      <div className="card__head"><h2>Record Cash Receipt</h2><Tag>LIVE RECORDING</Tag></div>
+      <Field label="Open Invoice">
+        <SelectInput value={invoiceId} onChange={(event) => setInvoiceId(event.target.value)}>
+          <option value="">Select invoice...</option>
+          {invoices.filter(i => i.status !== "PAID").map(inv => (
+            <option key={inv.id} value={inv.id}>{inv.buyerName} · {formatMoney(inv.amountDue)}</option>
+          ))}
+        </SelectInput>
+      </Field>
+      {selectedInvoice && (
+        <div className="info-strip">
+          <Wallet size={17}/>
+          <div><strong>Outstanding balance</strong><div>{formatMoney(openBalance.toFixed(2))} remaining to collect</div></div>
+        </div>
+      )}
+      <Field label="Amount Paid · INR"><TextInput inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} required disabled={busy}/></Field>
+      <div className="form-grid">
+        <Field label="Method"><SelectInput value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)} disabled={busy}><option value="WIRE">Bank Wire / NEFT</option><option value="CHEQUE">Cheque</option><option value="CASH">Cash</option></SelectInput></Field>
+        <Field label="Bank / UTR / Receipt Ref"><TextInput value={reference} onChange={(event) => setReference(event.target.value)} required minLength={3} disabled={busy}/></Field>
+      </div>
+      <Button type="submit" disabled={busy || !invoiceId}>{busy ? "Recording..." : "Record Payment"}</Button>
+    </form>
+    <div className="stack">
+      <Card title="Open Invoices">
+        <DataTable headers={["Buyer", "Due Date", "Amount Due", "Status"]} rows={invoices.filter(i => i.status !== "PAID").slice(0,5).map(inv => [inv.buyerName, formatDate(inv.dueDate), formatMoney(inv.amountDue), <StatusBadge status={inv.status}/>])} empty={<EmptyState title="No open invoices"/>} />
+      </Card>
+      <Card title="Recent Receipts">
+        <DataTable headers={["Date", "Reference", "Method", "Amount"]} rows={payments.slice(0,5).map(p => [formatDate(p.paymentDate), p.referenceNo, p.paymentMethod, formatMoney(p.amountPaid)])} empty={<EmptyState title="No receipts recorded"/>} />
+      </Card>
+    </div>
+  </div></>;
 }
 
 function ExpensesPage() {

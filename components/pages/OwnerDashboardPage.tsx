@@ -13,10 +13,11 @@ export function OwnerDashboardPage() {
   const today = new Intl.DateTimeFormat("en-IN", { weekday: "long", day: "2-digit", month: "long", timeZone: "Asia/Kolkata" }).format(new Date());
   
   // Financial metrics
+  const invoices = data.invoices || [];
+  const payments = data.payments || [];
   const totalRevenue = data.orders.reduce((sum, order) => sum.plus(order.revenue), new Decimal(0));
-  const totalCost = data.orders.reduce((sum, order) => sum.plus(order.recordedCost), new Decimal(0));
-  const expectedProfit = totalRevenue.minus(totalCost);
-  const profitMargin = totalRevenue.gt(0) ? expectedProfit.dividedBy(totalRevenue).times(100) : new Decimal(0);
+  const cashCollected = payments.reduce((sum, p) => sum.plus(p.amountPaid), new Decimal(0));
+  const outstandingAR = invoices.reduce((sum, inv) => sum.plus(inv.amountDue), new Decimal(0)).minus(cashCollected);
 
   // Operations metrics
   const breakdowns = data.machines.filter((machine) => machine.status === "BREAKDOWN");
@@ -45,18 +46,25 @@ export function OwnerDashboardPage() {
 
       <div className="stat-grid" style={{ marginBottom: "2rem" }}>
         <StatCard 
-          label="Gross Revenue" 
+          label="Total Booked Revenue" 
           value={formatMoney(totalRevenue, "INR")} 
           detail="Total across all current orders" 
           icon={CircleDollarSign} 
-          tone="indigo" 
+          tone="cotton" 
         />
         <StatCard 
-          label="Profit Margin" 
-          value={`${profitMargin.toFixed(1)}%`} 
-          detail={`Expected profit: ${formatCompactMoney(expectedProfit.toFixed(2))}`} 
+          label="Cash Collected" 
+          value={formatMoney(cashCollected, "INR")} 
+          detail={`${payments.length} receipts cleared`} 
           icon={LineChart} 
           tone="neem" 
+        />
+        <StatCard 
+          label="Outstanding AR" 
+          value={formatMoney(outstandingAR, "INR")} 
+          detail="Pending from open invoices" 
+          icon={CircleDollarSign} 
+          tone="turmeric" 
         />
         <StatCard 
           label="Active Output" 
