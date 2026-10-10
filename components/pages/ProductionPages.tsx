@@ -28,6 +28,7 @@ function ProductionBoard() {
   const { data } = useDemo();
   const [currentDate, setCurrentDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedOrderCode, setSelectedOrderCode] = useState<string | null>(null);
+  const [assignOperatorModal, setAssignOperatorModal] = useState<{ operatorName: string, shift: string } | null>(null);
 
   const shifts = ["A · 06:00–14:00", "B · 14:00–22:00", "C · 22:00–06:00"];
 
@@ -47,6 +48,7 @@ function ProductionBoard() {
     });
 
   return <>
+    {assignOperatorModal && <AssignTaskModal operatorName={assignOperatorModal.operatorName} shift={assignOperatorModal.shift} unassignedOps={unassignedOps} onClose={() => setAssignOperatorModal(null)} />}
     {selectedOrderCode && <OrderModal orderCode={selectedOrderCode} onClose={() => setSelectedOrderCode(null)} />}
     <PageHeader 
       eyebrow="Make & move · shop floor" 
@@ -71,7 +73,7 @@ function ProductionBoard() {
     </div>
     
     <div className="page-grid">
-      {shifts.map(shift => {
+      {shifts.map((shift, shiftIndex) => {
         const expectedShiftString = `${currentDate} | ${shift}`;
         // Support legacy assignment format where date isn't explicitly prepended if it's today
         const assignedOps = data.operations.filter(op => 
@@ -79,7 +81,23 @@ function ProductionBoard() {
           (op.shift === shift && currentDate === new Date().toISOString().split('T')[0])
         );
         
-        const machineOperators = DEMO_USERS.filter(u => u.roles.includes("MACHINE_OPERATOR"));
+        const machineOperators = DEMO_USERS.filter(u => u.roles.includes("MACHINE_OPERATOR")).filter((op, idx) => {
+          const operatorName = op.name.split(" (")[0];
+          
+          // 1. Are they assigned to THIS shift?
+          if (assignedOps.some(o => o.operators.includes(operatorName))) return true;
+          
+          // 2. Are they assigned to ANY OTHER shift on this same date?
+          const isBusyToday = data.operations.some(o => 
+            o.operators.includes(operatorName) && 
+            (o.shift?.startsWith(currentDate) || (o.shift && currentDate === new Date().toISOString().split('T')[0] && !o.shift.includes("|")))
+          );
+          if (isBusyToday) return false;
+          
+          // 3. If idle today, only show them in their assigned roster (e.g. index % 3)
+          return idx % 3 === shiftIndex;
+        });
+
         const accountedOpIds = new Set<string>();
 
         return (
@@ -105,7 +123,7 @@ function ProductionBoard() {
                       <div key={operator.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: "8px 12px", background: "var(--color-bg)", borderRadius: 4, border: "1px dashed var(--color-border)" }}>
                         <span style={{ fontSize: 13, color: "var(--color-secondary)" }}>👤</span>
                         <span style={{ fontWeight: 600, fontSize: 13, flex: 1, color: "var(--color-secondary)" }}>{operatorName}</span>
-                        <Tag>Idle</Tag>
+                        <Button size="sm" variant="secondary" onClick={() => setAssignOperatorModal({ operatorName, shift: expectedShiftString })}>+ Assign</Button>
                       </div>
                     );
                   }
@@ -453,6 +471,93 @@ function OrderModal({ orderCode, onClose }: { orderCode: string; onClose: () => 
              </Card>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+export function AssignTaskModal({ operatorName, shift, unassignedOps, onClose }: { operatorName: string; shift: string; unassignedOps: Operation[]; onClose: () => void; }) {
+  const { data, user, toast } = useDemo();
+  const [selectedOpId, setSelectedOpId] = useState("");
+  const [selectedMachine, setSelectedMachine] = useState("");
+  const [assigning, setAssigning] = useState(false);
+  
+  const selectedOp = unassignedOps.find(o => o.id === selectedOpId);
+  const eligibleMachines = selectedOp ? data.machines.filter(m => m.stage === selectedOp.stage && m.status === "IDLE") : [];
+
+  const estimatedHours = selectedOp ? new Decimal(selectedOp.target).div(50).toNumber() : 0;
+  
+  const handleAssign = async () => {
+    setAssigning(true);
+    try {
+      const res = await fetch("/api/production/assign-machine", {
+        method: "POST",
+        body: JSON.stringify({
+           operationId: selectedOpId,
+           machineId: selectedMachine,
+           shift,
+           operator: operatorName,
+           actor: user?.name,
+           autoSplit: estimatedHours > 8
+        })
+      });
+      const outcome = await res.json();
+      if (outcome.success) {
+        toast("Assignment saved", "Task assigned to operator.", "success");
+        window.location.reload();
+      } else {
+        toast("Error", outcome.error, "error");
+      }
+    } catch (err: any) {
+      toast("Error", err.message, "error");
+    } finally {
+      setAssigning(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal-content" style={{ width: 450 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Assign Task to {operatorName}</h2>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "inherit" }}><X size={20}/></button>
+        </div>
+        
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <Field label="Order Task">
+            <SelectInput value={selectedOpId} onChange={e => { setSelectedOpId(e.target.value); setSelectedMachine(""); }} disabled={assigning}>
+               <option value="">Select task...</option>
+               {unassignedOps.map(op => {
+                 const order = data.orders.find(o => o.code === op.orderCode);
+                 const est = new Decimal(op.target).div(50).toNumber().toFixed(1);
+                 return <option key={op.id} value={op.id}>{op.orderCode} · {op.stage} (Est: {est} hrs)</option>;
+               })}
+            </SelectInput>
+          </Field>
+          
+          {selectedOp && (
+            <>
+              <div style={{ padding: 12, background: "var(--indigo-soft)", borderRadius: 4, display: "flex", flexDirection: "column", gap: 4 }}>
+                <span style={{ fontWeight: 700 }}>⏱️ Estimated time: {estimatedHours.toFixed(1)} hours</span>
+                {estimatedHours > 8 && <span style={{ fontSize: 12 }}>Note: Exceeds 8 hrs. Will auto-split remaining qty to next shift.</span>}
+              </div>
+              
+              <Field label="Machine">
+                <SelectInput value={selectedMachine} onChange={e => setSelectedMachine(e.target.value)} disabled={assigning || !eligibleMachines.length}>
+                  <option value="">{eligibleMachines.length ? "Select machine..." : `No eligible IDLE ${selectedOp.stage} machines`}</option>
+                  {eligibleMachines.map(m => <option key={m.id} value={m.code}>{m.code} · {m.name}</option>)}
+                </SelectInput>
+              </Field>
+            </>
+          )}
+          
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
+            <Button variant="secondary" onClick={onClose} disabled={assigning}>Cancel</Button>
+            <Button variant="primary" disabled={assigning || !selectedOpId || !selectedMachine} onClick={handleAssign}>
+              {assigning ? "Assigning..." : "Assign Task"}
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   );
