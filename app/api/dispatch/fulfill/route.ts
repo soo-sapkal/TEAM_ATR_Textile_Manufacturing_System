@@ -43,16 +43,27 @@ export async function POST(req: Request) {
 
     if (!rollsData.length) throw new Error("Failed to fetch rolls");
 
+    const orderRes = await pool.query("SELECT * FROM orders WHERE code = $1", [orderCode]);
+    const orderData = orderRes.rows[0];
+
+    if (!orderData) throw new Error("Failed to fetch order");
+
     const totalQty = rollsData.reduce((sum, r) => sum.plus(new Decimal(r.qty || 0)), new Decimal(0));
     const rollsCount = rollsData.length;
     const unit = rollsData[0]?.unit || "M";
+
+    const ratePerMeter = new Decimal(orderData.revenue || 0).div(new Decimal(orderData.ordered || 1));
+    const subtotal = totalQty.mul(ratePerMeter);
+    const taxCgst = subtotal.mul(0.025);
+    const taxSgst = subtotal.mul(0.025);
+    const totalInvoiceAmount = subtotal.plus(taxCgst).plus(taxSgst);
 
     await pool.query(
       `INSERT INTO shipments (id, code, order_code, buyer, status, rolls, qty, unit, vehicle, driver_name, license_plate, transport_agency, eway_bill_number, planned_at, invoice, amount) 
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
       [
         shipmentId, shipmentCode, orderCode, buyer, "DISPATCHED", rollsCount, totalQty.toNumber(), unit,
-        licensePlate || vehicle, driverName, licensePlate, transportAgency, ewayBillNumber, plannedAt, invoice, parseFloat(amount || "0")
+        licensePlate || vehicle, driverName, licensePlate, transportAgency, ewayBillNumber, plannedAt, invoice, totalInvoiceAmount.toNumber()
       ]
     );
 
@@ -61,10 +72,23 @@ export async function POST(req: Request) {
       ["DISPATCHED", `In Transit (${licensePlate || vehicle || 'Unknown'})`, shipmentId, shipmentCode, rollIds]
     );
 
-    const orderRes = await pool.query("SELECT * FROM orders WHERE code = $1", [orderCode]);
-    const orderData = orderRes.rows[0];
+    // Create Invoice Record
+    const invoiceId = crypto.randomUUID();
+    const dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + 30); // Net 30 Terms
+    
+    await pool.query(
+      `INSERT INTO invoices (id, code, shipment_id, order_code, buyer_name, subtotal, tax_cgst, tax_sgst, amount_due, due_date, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+       [invoiceId, invoice, shipmentId, orderCode, buyer, subtotal.toNumber(), taxCgst.toNumber(), taxSgst.toNumber(), totalInvoiceAmount.toNumber(), dueDate.toISOString().split('T')[0], 'PENDING']
+    );
 
-    if (!orderData) throw new Error("Failed to fetch order");
+    await pool.query(
+      `INSERT INTO invoice_line_items (id, invoice_id, description, quantity, unit, unit_rate, total)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+       [crypto.randomUUID(), invoiceId, `${orderData.product} - ${orderData.colour}`, totalQty.toNumber(), unit, ratePerMeter.toNumber(), subtotal.toNumber()]
+    );
+
 
     const newDispatched = new Decimal(orderData.dispatched || 0).plus(totalQty);
     const remaining = Decimal.max(0, new Decimal(orderData.ordered || 0).minus(newDispatched));
