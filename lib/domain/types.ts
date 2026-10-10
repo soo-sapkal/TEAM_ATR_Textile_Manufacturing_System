@@ -113,6 +113,10 @@ export interface FabricRoll {
   createdAt: string;
   priorFailure: boolean;
   defect?: string;
+  dispatchQcPassed?: boolean;
+  dispatchQcNotes?: string;
+  dispatchQcBy?: string;
+  dispatchQcAt?: string;
 }
 
 export interface Shipment {
@@ -126,6 +130,10 @@ export interface Shipment {
   qty: string;
   unit: Unit;
   vehicle: string;
+  driverName?: string;
+  licensePlate?: string;
+  transportAgency?: string;
+  ewayBillNumber?: string;
   plannedAt: string;
   invoice: string | null;
   amount: string;

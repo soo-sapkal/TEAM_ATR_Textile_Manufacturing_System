@@ -1,5 +1,5 @@
-import { DashboardPage } from "@/components/pages/DashboardPage";
+import { BuyerDashboardPage } from "@/components/pages/BuyerDashboardPage";
 
-export default function BuyerDashboardPage() {
-  return <DashboardPage />;
+export default function BuyerDashboardPageRoute() {
+  return <BuyerDashboardPage />;
 }
