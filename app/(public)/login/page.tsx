@@ -21,13 +21,47 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  function enterAs(id: string) {
+  async function enterAs(id: string) {
     setBusy(true);
-    loginAs(id);
+    setError("");
     const selected = DEMO_USERS.find((user) => user.id === id);
-    const next = new URLSearchParams(window.location.search).get("next");
-    const destination = next && next.startsWith("/") && !next.startsWith("//") ? next : selected?.landing ?? "/dashboard";
-    router.push(destination);
+    if (!selected) return;
+
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: selected.email, password: "password123" })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Login failed.");
+        setBusy(false);
+        return;
+      }
+
+      const roleMap: Record<string, string> = {
+        "OWNER": "owner",
+        "SUPERVISOR": "supervisor",
+        "MACHINE_OPERATOR": "operator",
+        "QUALITY_INSPECTOR": "quality",
+        "DISPATCH_OFFICER": "dispatch",
+        "BUYER": "buyer"
+      };
+
+      const folder = roleMap[data.user.role] || "dashboard";
+      const next = new URLSearchParams(window.location.search).get("next");
+      
+      setTimeout(() => {
+        router.push(next && next.startsWith("/") && !next.startsWith("//") ? next : `/${folder}/dashboard`);
+        window.location.href = `/${folder}/dashboard`;
+      }, 300);
+      
+    } catch (err) {
+      setError("An unexpected error occurred.");
+      setBusy(false);
+    }
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
