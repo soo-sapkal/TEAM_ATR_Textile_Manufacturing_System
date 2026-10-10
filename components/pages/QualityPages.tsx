@@ -58,15 +58,17 @@ function QualityQueuePage() {
       
       <div className="stat-grid" style={{ marginBottom: 24 }}>
         <div style={{ border: "3px solid #000", boxShadow: "4px 4px 0px #000", padding: "20px", background: "var(--turmeric)", display: "flex", flexDirection: "column", gap: "8px", transition: "transform 0.1s", cursor: "default" }} onMouseEnter={e => e.currentTarget.style.transform = "translate(-2px, -2px)"} onMouseLeave={e => e.currentTarget.style.transform = "none"}>
-          <div style={{ fontSize: "0.9rem", fontWeight: 700, textTransform: "uppercase" }}>Total Pending QC (M)</div>
+          <div style={{ fontSize: "0.9rem", fontWeight: 700, textTransform: "uppercase" }}>Unchecked Finished Goods (M)</div>
           <div style={{ fontSize: "2rem", fontWeight: 900 }}>{totalMetersPending.toFixed(2)}</div>
-          <div style={{ fontSize: "0.85rem", opacity: 0.8 }}>across {waitingRolls.length} rolls/batches</div>
+          <div style={{ fontSize: "0.85rem", opacity: 0.8 }}>in warehouse ({waitingRolls.length} rolls)</div>
         </div>
-        <div style={{ border: "3px solid #000", boxShadow: "4px 4px 0px #000", padding: "20px", background: "var(--cotton)", display: "flex", flexDirection: "column", gap: "8px", transition: "transform 0.1s", cursor: "default" }} onMouseEnter={e => e.currentTarget.style.transform = "translate(-2px, -2px)"} onMouseLeave={e => e.currentTarget.style.transform = "none"}>
-          <div style={{ fontSize: "0.9rem", fontWeight: 700, textTransform: "uppercase" }}>Orders Awaiting QC (M)</div>
-          <div style={{ fontSize: "2rem", fontWeight: 900 }}>{activeOrderVolume.toFixed(2)}</div>
-          <div style={{ fontSize: "0.85rem", opacity: 0.8 }}>across {activeOrders.length} active orders</div>
-        </div>
+        {hasPermission(user, "orders.read") && (
+          <div style={{ border: "3px solid #000", boxShadow: "4px 4px 0px #000", padding: "20px", background: "var(--cotton)", display: "flex", flexDirection: "column", gap: "8px", transition: "transform 0.1s", cursor: "default" }} onMouseEnter={e => e.currentTarget.style.transform = "translate(-2px, -2px)"} onMouseLeave={e => e.currentTarget.style.transform = "none"}>
+            <div style={{ fontSize: "0.9rem", fontWeight: 700, textTransform: "uppercase" }}>Orders Awaiting QC (M)</div>
+            <div style={{ fontSize: "2rem", fontWeight: 900 }}>{activeOrderVolume.toFixed(2)}</div>
+            <div style={{ fontSize: "0.85rem", opacity: 0.8 }}>across {activeOrders.length} active orders</div>
+          </div>
+        )}
         <div style={{ border: "3px solid #000", boxShadow: "4px 4px 0px #000", padding: "20px", background: "var(--neem)", display: "flex", flexDirection: "column", gap: "8px", transition: "transform 0.1s", cursor: "default" }} onMouseEnter={e => e.currentTarget.style.transform = "translate(-2px, -2px)"} onMouseLeave={e => e.currentTarget.style.transform = "none"}>
           <div style={{ fontSize: "0.9rem", fontWeight: 700, textTransform: "uppercase" }}>First Time Yield (FTY)</div>
           <div style={{ fontSize: "2rem", fontWeight: 900 }}>{fty}%</div>

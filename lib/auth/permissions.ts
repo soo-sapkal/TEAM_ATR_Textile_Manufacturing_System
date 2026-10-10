@@ -6,7 +6,7 @@ export const ROLE_PERMISSIONS: Record<string, Role> = {
   OWNER: { name: "Owner of Factory", landing: "/dashboard", perms: ["users.manage", "audit.read", "master.manage", "orders.read", "orders.approve", "inventory.read", "production.read", "machines.operate", "quality.read", "dispatch.read", "finance.read", "hr.attendance", "payroll.read"] },
   SUPERVISOR: { name: "Supervisor (Factory Incharge)", landing: "/dashboard", perms: ["orders.read", "orders.create", "orders.approve", "inventory.read", "inventory.receive", "production.read", "production.plan", "production.assign", "production.record_output", "machines.operate", "quality.read", "dispatch.read"] },
   MACHINE_OPERATOR: { name: "Machine Operator", landing: "/my-work", perms: ["production.read", "production.record_output", "machines.operate", "quality.rework", "hr.attendance", "payroll.read"] },
-  QUALITY_INSPECTOR: { name: "Quality Inspector", landing: "/quality", perms: ["quality.read", "quality.inspect", "quality.rework", "quality.release"] },
+  QUALITY_INSPECTOR: { name: "Quality Inspector", landing: "/quality", perms: ["quality.read", "quality.inspect", "quality.rework", "quality.release", "orders.read", "inventory.read"] },
   DISPATCH_OFFICER: { name: "Dispatch Officer", landing: "/dispatch", perms: ["dispatch.read", "dispatch.create", "dispatch.confirm", "dispatch.reverse", "orders.read", "quality.read"] },
   BUYER: { name: "Buyer", landing: "/buyer/dashboard", perms: ["portal.read", "orders.create", "orders.read"] },
 };
@@ -155,7 +155,8 @@ export const ROLE_NAVIGATION: Record<string, { label: string; items: { label: st
   QUALITY_INSPECTOR: [
     { label: "Inspections", items: [
       { label: "Quality Dashboard", href: "/quality/dashboard", icon: "grid" },
-      { label: "Scan Roll", href: "/quality/scan", icon: "scan" }
+      { label: "Scan Roll", href: "/quality/scan", icon: "scan" },
+      { label: "Orders", href: "/quality/orders", icon: "orders" },
     ] }
   ],
   BUYER: [
