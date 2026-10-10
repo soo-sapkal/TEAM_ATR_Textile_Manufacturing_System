@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase/client";
-import type { DemoData, Order, YarnItem, YarnBatch, Machine, FabricRoll, Shipment, Operation } from "@/lib/domain/types";
+import type { DemoData, Order, YarnItem, YarnBatch, Machine, FabricRoll, Shipment, Operation, YarnMovement, OutputEvent, InspectionEvent, ReworkEvent, DispatchEvent, MachineEvent } from "@/lib/domain/types";
 
 export function snakeToCamel(obj: any): any {
   if (Array.isArray(obj)) {
