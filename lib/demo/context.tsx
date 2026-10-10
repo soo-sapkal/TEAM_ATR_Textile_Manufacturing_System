@@ -103,6 +103,7 @@ export function DemoProvider({ children }: { children: ReactNode }) {
       .catch(() => setUser(null))
       .finally(() => setIsAuthLoaded(true));
 
+  const refreshData = useCallback(() => {
     Promise.all([
       fetch("/api/orders").then(r => r.json()),
       fetch("/api/inventory").then(r => r.json()),
@@ -158,6 +159,23 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     }).catch(console.error).finally(() => setIsDataLoaded(true));
   }, []);
 
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.user) {
+          const perms = d.user.permissions?.length ? d.user.permissions : (DEMO_USERS.find(u => u.roles.includes(d.user.roles[0]))?.permissions || []);
+          setUser({ ...d.user, permissions: perms, landing: "/" });
+        } else {
+          setUser(null);
+        }
+      })
+      .catch(() => setUser(null))
+      .finally(() => setIsAuthLoaded(true));
+
+    refreshData();
+  }, [refreshData]);
+
   const toast = useCallback((title: string, detail?: string, tone: ToastMessage["tone"] = "info") => {
     const id = crypto.randomUUID();
     setToasts((current) => [...current, { id, title, detail, tone }]);
@@ -169,8 +187,9 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     if (!selected) return;
     window.sessionStorage.setItem(STORAGE_KEY, selected.id);
     window.dispatchEvent(new Event(SESSION_CHANGE_EVENT));
-    toast(`Signed in as ${selected.name}`, "Demo session only — records are not sent to a mill system.", "success");
-  }, [toast]);
+    toast(`Signed in as ${selected.name}`, "Session active · Connected to Supabase", "success");
+    refreshData();
+  }, [toast, refreshData]);
 
   const logout = useCallback(async () => {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -184,7 +203,7 @@ export function DemoProvider({ children }: { children: ReactNode }) {
       dataRef.current = applied.state;
       setData(applied.state);
     }
-    const detail = "Session-only demo state; refresh to reset. No factory, finance, or buyer system was contacted.";
+    const detail = applied.ok ? "Records saved to database." : "Operation could not be saved.";
     toast(applied.message, detail, applied.ok ? (kind === "mark-read" ? "info" : "warning") : "error");
     return { ok: applied.ok, reference: applied.reference };
   }, [toast, user]);

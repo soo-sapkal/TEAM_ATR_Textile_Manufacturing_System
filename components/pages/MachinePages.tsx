@@ -179,7 +179,7 @@ function MachineDetail({ id }: { id: string }) {
         <Card title="Append-only downtime / maintenance events" action={<Tag>{events.length} entries</Tag>}>
           <DataTable headers={["Event", "Type / status", "Reason", "Duration", "Actor", "Started"]} rows={events.map((item) => [<span className="code">{item.code}</span>, <StatusBadge status={item.status === "OPEN" ? "BREAKDOWN" : item.kind} label={`${item.kind} · ${item.status}`}/>, item.reason, `${item.durationMinutes} min`, item.actor, formatDateTime(item.startedAt)])} empty={<EmptyState title="No downtime events" detail="A downtime or maintenance action will create an append-only event." />}/>
         </Card>
-        <InfoStrip tone="warning">Demo actions reset on refresh and never write to a mill system. Real machine transitions require server-side state guards and recorded event timestamps.</InfoStrip>
+        <InfoStrip tone="info">Machine state changes and downtime events are recorded directly with timestamps and operator records.</InfoStrip>
       </div>
     </div>
   </>;
