@@ -1,4 +1,4 @@
-# Intern Task 1: Inventory Receive & Movement Ledger Updates
+# Task 1 - GJ: Inventory Receive & Movement Ledger Updates
 
 **Context & Requirements:**
 
