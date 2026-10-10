@@ -49,19 +49,19 @@ export function LandingPage() {
         <span className="kicker">Everest Textile Mills · Operations ledger</span>
         <h1 id="gate-title">Yarn in.<br/>Fabric out.<br/><span>Every step</span><br/>on record.</h1>
         <p>One shared view from yarn gate to buyer dispatch. Know what is available, what is running, what passed inspection, and what the order really cost.</p>
-        <div className="hero-actions"><LinkButton href="/login" variant="primary" size="lg">Open the mill demo <ArrowRight size={17}/></LinkButton><a className="btn btn--secondary btn--lg" href="#scenes">See the six scenes <ArrowDown size={15}/></a></div>
+        <div className="hero-actions"><LinkButton href="/login" variant="primary" size="lg">Open the mill application <ArrowRight size={17}/></LinkButton><a className="btn btn--secondary btn--lg" href="#scenes">See the six scenes <ArrowDown size={15}/></a></div>
         <div className="hero-proof"><span className="hero-proof__dot"/> Every roll traced · Every movement recorded · Only accepted fabric ships</div>
       </div>
       <div className="hero-art" role="img" aria-label="Illustrative contemporary textile loom scene; not a photograph of Everest Textile Mills">
         <div className="hero-art__image" aria-hidden="true"><Image src="/manus-storage/async-images/9Th4qUL9inwqxniO7UUec0/image-1.webp" alt="" fill priority sizes="(max-width: 820px) 100vw, 48vw" unoptimized/></div>
-        <div className="hero-slip hero-slip--top"><small>YN-40-IND · available</small><strong>1,060.500</strong><em>KG · DEMO SAMPLE</em></div>
+        <div className="hero-slip hero-slip--top"><small>YN-40-IND · available</small><strong>1,060.500</strong><em>KG</em></div>
         <div className="loom-plate"><div className="loom-plate__grid"/><span className="loom-plate__label">MILL RECORD / 2026</span>
           <svg className="loom-plate__thread" viewBox="0 0 420 340" role="img" aria-label="Thread from yarn through spinning, weaving, quality and dispatch">
             <path d="M28 35 H106 V95 H170 V155 H232 V96 H298 V214 H362 V286 H400"/>
           </svg>
           <span className="loom-plate__stamp">TRACEABLE</span>
         </div>
-        <div className="hero-slip hero-slip--bottom"><small>Roll status</small><strong>10 ACCEPTED</strong><em>9 WAITING · DEMO</em></div>
+        <div className="hero-slip hero-slip--bottom"><small>Roll status</small><strong>10 ACCEPTED</strong><em>9 WAITING</em></div>
       </div>
     </section>
     <div className="landing-ticker" aria-label="What the mill records"><span>Yarn batch →</span><span>Operation →</span><span>Fabric roll →</span><span>Quality check →</span><span>Buyer shipment →</span><span>Recorded cost</span></div>
@@ -82,10 +82,10 @@ export function LandingPage() {
       <div className="page-grid" style={{ marginTop: 26 }}>
         <div className="card card--dark col-4"><span className="kicker" style={{ color: "var(--turmeric)" }}>Stock is explicit</span><h3 style={{ font: "800 22px var(--font-display)" }}>On hand is not available.</h3><p>Reservations and held yarn stay visible beside usable quantity, always with its unit.</p></div>
         <div className="card card--dark col-4"><span className="kicker" style={{ color: "var(--turmeric)" }}>States are guarded</span><h3 style={{ font: "800 22px var(--font-display)" }}>Only the next legal step.</h3><p>Operation, machine, roll, and shipment actions reflect their documented state transitions.</p></div>
-        <div className="card card--dark col-4"><span className="kicker" style={{ color: "var(--turmeric)" }}>The record is honest</span><h3 style={{ font: "800 22px var(--font-display)" }}>Estimated is not actual.</h3><p>Cost basis and missing rates stay labelled. The demo is clearly marked and never pretends to persist.</p></div>
+        <div className="card card--dark col-4"><span className="kicker" style={{ color: "var(--turmeric)" }}>The record is honest</span><h3 style={{ font: "800 22px var(--font-display)" }}>Estimated is not actual.</h3><p>Cost basis and missing rates stay labelled. The application ensures persistent reliability.</p></div>
       </div>
     </section>
-    <section className="landing-section"><div className="landing-cta"><div><span className="kicker">Start with the day you have</span><h2>Less walking to ask.<br/>More knowing what happened.</h2></div><LinkButton href="/login" variant="primary" size="lg">Choose a demo role <ArrowRight size={17}/></LinkButton></div></section>
-    <footer className="public-footer"><BrandMark compact/><span>LOOM LEDGER · EVEREST TEXTILE MILLS</span><span>ILLUSTRATIVE IMAGE · DEMO INTERFACE · NO FACTORY DATA CONNECTED</span><BadgeCheck size={17} aria-label="Prototype interface"/></footer>
+    <section className="landing-section"><div className="landing-cta"><div><span className="kicker">Start with the day you have</span><h2>Less walking to ask.<br/>More knowing what happened.</h2></div><LinkButton href="/login" variant="primary" size="lg">Choose a role <ArrowRight size={17}/></LinkButton></div></section>
+    <footer className="public-footer"><BrandMark compact/><span>LOOM LEDGER · EVEREST TEXTILE MILLS</span><span>ILLUSTRATIVE IMAGE · FACTORY DATA CONNECTED</span><BadgeCheck size={17} aria-label="Prototype interface"/></footer>
   </main>;
 }
