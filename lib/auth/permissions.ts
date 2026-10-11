@@ -179,6 +179,7 @@ export const ROLE_NAVIGATION: Record<string, { label: string; items: { label: st
   DISPATCH_OFFICER: [
     { label: "Logistics", items: [
       { label: "Dispatch Dashboard", href: "/dispatch/dashboard", icon: "grid" },
+      { label: "Active & Pending Orders", href: "/dispatch/orders", icon: "orders" },
       { label: "Final QC Scan", href: "/dispatch/scan", icon: "scan" }
     ] }
   ],

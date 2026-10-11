@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { AdminRoute } from "@/components/pages/AdminPages";
 import { BackOfficeRoute } from "@/components/pages/BackOfficePages";
 import { DashboardPage } from "@/components/pages/DashboardPage";
-import { DispatchRoute } from "@/components/pages/DispatchPages";
+import { DispatchRoute, SupervisorDispatchDashboard } from "@/components/pages/DispatchPages";
 import { InventoryRoute } from "@/components/pages/InventoryPages";
 import { MachineRoute } from "@/components/pages/MachinePages";
 import { OrderDetailPage, NewOrderPage, OrdersPage } from "@/components/pages/OrdersPages";
@@ -22,6 +22,7 @@ export default async function RoleScopedPage({ params }: { params: Promise<{ rol
   let content: ReactNode;
 
   if (path === "/dashboard" && role === "buyer") content = <BuyerDashboardPage/>;
+  else if (path === "/dashboard" && role === "dispatch") content = <SupervisorDispatchDashboard/>;
   else if (path === "/dashboard") content = <DashboardPage/>;
   else if (path === "/orders") content = <OrdersPage/>;
   else if (path === "/orders/new") content = <NewOrderPage/>;
