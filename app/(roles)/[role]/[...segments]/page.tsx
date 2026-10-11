@@ -23,6 +23,7 @@ export default async function RoleScopedPage({ params }: { params: Promise<{ rol
 
   if (path === "/dashboard" && role === "buyer") content = <BuyerDashboardPage/>;
   else if (path === "/dashboard" && role === "dispatch") content = <SupervisorDispatchDashboard/>;
+  else if (path === "/dashboard" && role === "operator") content = <ProductionRoute path="/my-work" id={id}/>;
   else if (path === "/dashboard") content = <DashboardPage/>;
   else if (path === "/orders") content = <OrdersPage/>;
   else if (path === "/orders/new") content = <NewOrderPage/>;

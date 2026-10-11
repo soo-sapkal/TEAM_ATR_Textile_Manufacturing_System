@@ -19,8 +19,8 @@ export async function POST(req: Request) {
       const { ROLE_PERMISSIONS } = await import("@/lib/auth/permissions");
       permissions = ROLE_PERMISSIONS[payload.role]?.perms || [];
     }
-    if (!payload || !permissions.includes("production.assign")) {
-      return NextResponse.json({ success: false, error: "Forbidden: Requires production.assign permission" }, { status: 403 });
+    if (!payload || (!permissions.includes("production.assign") && !permissions.includes("production.record_output"))) {
+      return NextResponse.json({ success: false, error: "Forbidden: Requires production.assign or production.record_output permission" }, { status: 403 });
     }
 
     const body = await req.json();

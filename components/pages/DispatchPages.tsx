@@ -527,7 +527,7 @@ function ShipmentPage({ id }: { id: string }) {
       });
       const data = await res.json();
       if (data.success) {
-        toast("Shipment Confirmed", `Shipment ${shipment.code} has been dispatched.`, "success");
+        toast("Shipment Confirmed", `Shipment ${shipment?.code || shipmentId} has been dispatched.`, "success");
         window.location.reload();
       } else {
         toast("Confirmation failed", data.error, "error");
