@@ -36,8 +36,21 @@ export async function POST(req: Request) {
     if (!operation) throw new Error("Operation not found");
 
     // 1. Enforce operator skills
-    const profRes = await client.query("SELECT skill FROM users WHERE name LIKE $1 || '%'", [operator]);
-    const operatorSkill = profRes.rows[0]?.skill;
+    const profRes = await client.query(
+      "SELECT skill, name FROM users WHERE name ILIKE $1 || '%' OR name ILIKE '%' || $1 || '%'",
+      [operator]
+    );
+    let operatorSkill = profRes.rows[0]?.skill;
+
+    if (!operatorSkill) {
+      const { DEMO_USERS } = await import("@/lib/auth/permissions");
+      const demoOp = DEMO_USERS.find(u => u.name.toLowerCase().includes(operator.toLowerCase()));
+      if (demoOp) {
+        const nameLower = demoOp.name.toLowerCase();
+        operatorSkill = (demoOp as any).skill || (nameLower.includes("spinning") ? "SPINNING" : nameLower.includes("weaving") ? "WEAVING" : nameLower.includes("dyeing") ? "DYEING" : "ALL");
+      }
+    }
+
     if (!operatorSkill) throw new Error(`Operator profile '${operator}' not found`);
     if (operatorSkill !== "ALL" && operatorSkill !== operation.stage) {
       throw new Error(`Operator skill '${operatorSkill}' is not qualified for stage '${operation.stage}'. Required: ${operation.stage} or ALL.`);
