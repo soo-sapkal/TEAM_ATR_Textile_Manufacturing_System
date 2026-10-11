@@ -1,11 +1,7 @@
 import { NextResponse } from "next/server";
-import { Pool } from "pg";
+import { pool } from "@/lib/db/pool";
 import bcrypt from "bcryptjs";
 import { signToken } from "@/lib/auth/auth";
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || "postgresql://postgres.xaqbisnaetgsjiortzgi:sohamsapkal@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres",
-});
 
 export async function POST(request: Request) {
   try {

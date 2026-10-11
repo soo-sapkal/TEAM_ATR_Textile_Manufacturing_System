@@ -338,8 +338,8 @@ export function DispatchActiveOrdersPage() {
             <LinkButton href="/dispatch/dashboard" variant="secondary">
               <ArrowLeft size={14}/> Dashboard
             </LinkButton>
-            <LinkButton href="/dispatch/scan" variant="quiet">
-              Final QC Scan
+            <LinkButton href="/dispatch/stock" variant="quiet">
+              Finished Goods Shelf
             </LinkButton>
           </div>
         }

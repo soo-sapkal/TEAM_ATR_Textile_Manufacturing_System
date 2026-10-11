@@ -51,6 +51,10 @@ export function DispatchFulfillmentPage() {
   // Multi-step fulfillment modal state
   const [fulfillingOrder, setFulfillingOrder] = useState<Order | null>(null);
   const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [selectedRollIds, setSelectedRollIds] = useState<Set<string>>(new Set());
+  const [scannedRollCode, setScannedRollCode] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [orderFilter, setOrderFilter] = useState("ALL"); // ALL, READY, PARTIAL, IN_PRODUCTION
 
   // Step 2: Transport & Vehicle details (matches DB Analysis Note fields)
   const [transportAgency, setTransportAgency] = useState("VRL Logistics Ltd.");
@@ -75,17 +79,43 @@ export function DispatchFulfillmentPage() {
     gatePassNo?: string;
   } | null>(null);
 
+  // Rolls eligible for fulfillment for selected order
+  const getOrderRolls = (orderCode: string): FabricRoll[] => {
+    return data.rolls.filter(
+      (r) =>
+        r.orderCode === orderCode &&
+        ["ACCEPTED", "RESERVED"].includes(r.status)
+    );
+  };
 
-  // Pending orders: orders with accepted rolls or ready for dispatch
+  // Pending orders: orders with remaining quantity
   const pendingOrders = data.orders.filter(
     (order) =>
       !completedOrderIds.includes(order.id) &&
-      (order.displayStatus === "READY_FOR_DISPATCH" ||
-        order.displayStatus === "PARTIALLY_DISPATCHED" ||
-        Number(order.accepted) > 0 ||
-        order.status === "IN_PRODUCTION") &&
+      order.status !== "CANCELLED" &&
+      order.status !== "DRAFT" &&
       Number(order.remaining) > 0
   );
+
+  const filteredPendingOrders = pendingOrders.filter((order) => {
+    const rolls = getOrderRolls(order.code);
+    const hasReadyRolls = rolls.length > 0;
+    const isPartiallyDispatched = Number(order.dispatched) > 0;
+
+    const matchesSearch =
+      !searchQuery ||
+      `${order.code} ${order.buyer} ${order.product} ${order.colour}`
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase());
+
+    const matchesFilter =
+      orderFilter === "ALL" ||
+      (orderFilter === "READY" && hasReadyRolls) ||
+      (orderFilter === "PARTIAL" && isPartiallyDispatched) ||
+      (orderFilter === "IN_PRODUCTION" && !hasReadyRolls);
+
+    return matchesSearch && matchesFilter;
+  });
 
   // Completed orders: orders where dispatched equals ordered or marked completed
   const completedOrders = data.orders.filter(
@@ -99,17 +129,11 @@ export function DispatchFulfillmentPage() {
     (s) => s.status === "DISPATCHED"
   );
 
-  // Rolls eligible for fulfillment for selected order
-  const getOrderRolls = (orderCode: string): FabricRoll[] => {
-    return data.rolls.filter(
-      (r) =>
-        r.orderCode === orderCode &&
-        ["ACCEPTED", "RESERVED"].includes(r.status)
-    );
-  };
-
   const handleStartFulfill = (order: Order) => {
     setFulfillingOrder(order);
+    const eligible = getOrderRolls(order.code);
+    setSelectedRollIds(new Set(eligible.map((r) => r.id)));
+    setScannedRollCode("");
     setStep(1);
     setTransportAgency("VRL Logistics Ltd.");
     setLicensePlate("KA-04-ME-5678");
@@ -122,6 +146,7 @@ export function DispatchFulfillmentPage() {
 
   const handleCloseFulfill = () => {
     setFulfillingOrder(null);
+    setSelectedRollIds(new Set());
     setStep(1);
   };
 
@@ -153,7 +178,13 @@ export function DispatchFulfillmentPage() {
   const handleConfirmFulfillment = async () => {
     if (!fulfillingOrder) return;
 
-    const rolls = getOrderRolls(fulfillingOrder.code);
+    const allRolls = getOrderRolls(fulfillingOrder.code);
+    const rolls = allRolls.filter((r) => selectedRollIds.has(r.id));
+    if (rolls.length === 0) {
+      toast("No Rolls Selected", "Please select at least one roll to load onto the truck.", "error");
+      return;
+    }
+
     const totalMeters = rolls.reduce((sum, r) => sum.plus(r.qty), new Decimal(0));
     const ratePerMeter = new Decimal(fulfillingOrder.revenue).div(fulfillingOrder.ordered).toFixed(2);
     const totalAmount = totalMeters.mul(ratePerMeter).mul(1.05).toFixed(2);
@@ -203,11 +234,8 @@ export function DispatchFulfillmentPage() {
         description="Streamlined fulfillment workflow for Dispatch Officers. Generate loading manifests, capture transport vehicle details, and issue official gate passes and tax invoices."
         actions={
           <>
-            <LinkButton href="/dispatch/scan" variant="secondary">
-              <ScanLine size={15} /> Final QC Scan
-            </LinkButton>
-            <LinkButton href="/dispatch/stock" variant="quiet">
-              <Package size={15} /> Finished Stock
+            <LinkButton href="/dispatch/stock" variant="secondary">
+              <Package size={15} /> Finished Goods (Shelf)
             </LinkButton>
           </>
         }
@@ -275,12 +303,50 @@ export function DispatchFulfillmentPage() {
           title="Orders Needing Fulfillment"
           action={
             <span className="cell-secondary" style={{ fontSize: 11 }}>
-              Click “Fulfill” to launch the 3-step manifest, carrier, and invoice workflow
+              Click “Fulfill Order” to launch the 3-step manifest, carrier, and invoice workflow
             </span>
           }
         >
+          {/* Subfilter chips and Search Bar */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
+            <div className="filter-row" role="group">
+              {[
+                { id: "ALL", label: `All Pending (${pendingOrders.length})` },
+                { id: "READY", label: `Ready to Ship (${pendingOrders.filter(o => getOrderRolls(o.code).length > 0).length})` },
+                { id: "PARTIAL", label: `Partially Dispatched (${pendingOrders.filter(o => Number(o.dispatched) > 0).length})` },
+                { id: "IN_PRODUCTION", label: `Awaiting FG Stock (${pendingOrders.filter(o => getOrderRolls(o.code).length === 0).length})` },
+              ].map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  className={`filter-chip ${orderFilter === f.id ? "filter-chip--active" : ""}`}
+                  style={{ border: "2px solid #000", fontWeight: 700 }}
+                  onClick={() => setOrderFilter(f.id)}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <input
+                type="text"
+                placeholder="Search order, buyer, product..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{
+                  border: "2px solid #000",
+                  padding: "7px 12px",
+                  background: "#fff",
+                  fontWeight: 600,
+                  width: 250,
+                }}
+              />
+            </div>
+          </div>
+
           <div className="stack" style={{ gap: 14 }}>
-            {pendingOrders.map((order) => {
+            {filteredPendingOrders.map((order) => {
               const eligibleRolls = getOrderRolls(order.code);
               const readyMeters = eligibleRolls.reduce(
                 (sum, r) => sum.plus(r.qty),
@@ -381,31 +447,47 @@ export function DispatchFulfillmentPage() {
                     <span style={{ fontSize: 11, color: "var(--ink-soft)" }}>
                       {eligibleRolls.length > 0
                         ? `${eligibleRolls.length} rolls inspected and eligible for immediate outward allocation.`
-                        : "Fabric rolls are undergoing weaving or dyeing operations."}
+                        : "Fabric rolls are undergoing weaving or dyeing operations (none in FG yet)."}
                     </span>
 
-                    <button
-                      type="button"
-                      className="btn btn--primary btn--md"
-                      onClick={() => handleStartFulfill(order)}
-                      style={{
-                        padding: "8px 18px",
-                        fontSize: 13,
-                        fontWeight: 900,
-                        backgroundColor: "var(--indigo)",
-                      }}
-                    >
-                      <Truck size={15} /> Fulfill Order
-                    </button>
+                    {eligibleRolls.length > 0 ? (
+                      <button
+                        type="button"
+                        className="btn btn--primary btn--md"
+                        onClick={() => handleStartFulfill(order)}
+                        style={{
+                          padding: "8px 18px",
+                          fontSize: 13,
+                          fontWeight: 900,
+                          backgroundColor: "var(--indigo)",
+                        }}
+                      >
+                        <Truck size={15} /> Fulfill Order
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn btn--secondary btn--sm"
+                        disabled
+                        style={{
+                          opacity: 0.65,
+                          cursor: "not-allowed",
+                          border: "2px solid #000",
+                          fontWeight: 700,
+                        }}
+                      >
+                        <Clock size={13} style={{ verticalAlign: "middle", marginRight: 4 }} /> Awaiting Finished Stock
+                      </button>
+                    )}
                   </div>
                 </div>
               );
             })}
 
-            {pendingOrders.length === 0 && (
+            {filteredPendingOrders.length === 0 && (
               <EmptyState
-                title="All orders fulfilled!"
-                detail="There are no pending fulfillment requests in the outbound queue."
+                title="No orders found"
+                detail={searchQuery ? "No pending orders match your search query." : "There are no pending fulfillment requests matching this filter."}
               />
             )}
           </div>
@@ -625,8 +707,73 @@ export function DispatchFulfillmentPage() {
                     Step 1 · Warehouse Loading Manifest
                   </h3>
                   <p style={{ margin: 0, fontSize: 12, color: "var(--ink-soft)" }}>
-                    Verify the exact rolls allocated from the Finished Goods warehouse into the carrier vehicle.
+                    Verify and select the exact rolls loaded onto the carrier vehicle. Only selected rolls will be dispatched.
                   </p>
+                </div>
+
+                {/* Scan Bar & Select All Controls */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+                  <div style={{ display: "flex", gap: 8, flex: 1, maxWidth: 450 }}>
+                    <TextInput
+                      placeholder="Scan roll tag or type roll code (e.g. ROLL-2026-101)..."
+                      value={scannedRollCode}
+                      onChange={(e) => setScannedRollCode(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          const code = scannedRollCode.trim().toUpperCase();
+                          const found = getOrderRolls(fulfillingOrder.code).find((r) => r.code.toUpperCase() === code);
+                          if (found) {
+                            setSelectedRollIds((prev) => new Set(prev).add(found.id));
+                            setScannedRollCode("");
+                            toast("Roll Added to Cargo", `Roll ${found.code} selected for loading.`, "success");
+                          } else {
+                            toast("Roll Not Found", `No matching roll ${code} in finished goods for this order.`, "warning");
+                          }
+                        }
+                      }}
+                      style={{ flex: 1 }}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn--secondary btn--sm"
+                      onClick={() => {
+                        const code = scannedRollCode.trim().toUpperCase();
+                        const found = getOrderRolls(fulfillingOrder.code).find((r) => r.code.toUpperCase() === code);
+                        if (found) {
+                          setSelectedRollIds((prev) => new Set(prev).add(found.id));
+                          setScannedRollCode("");
+                          toast("Roll Added to Cargo", `Roll ${found.code} selected for loading.`, "success");
+                        } else {
+                          toast("Roll Not Found", `No matching roll ${code} in finished goods for this order.`, "warning");
+                        }
+                      }}
+                      style={{ border: "2px solid #000" }}
+                    >
+                      <ScanLine size={14} /> Add
+                    </button>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      type="button"
+                      className="btn btn--secondary btn--sm"
+                      onClick={() => {
+                        const all = getOrderRolls(fulfillingOrder.code);
+                        setSelectedRollIds(new Set(all.map((r) => r.id)));
+                      }}
+                      style={{ border: "1.5px solid #000" }}
+                    >
+                      Select All
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn--quiet btn--sm"
+                      onClick={() => setSelectedRollIds(new Set())}
+                    >
+                      Clear
+                    </button>
+                  </div>
                 </div>
 
                 {/* Roll items table */}
@@ -634,6 +781,7 @@ export function DispatchFulfillmentPage() {
                   <table className="data-table" style={{ width: "100%" }}>
                     <thead>
                       <tr>
+                        <th style={{ width: 44 }}>Pick</th>
                         <th>Roll Code</th>
                         <th>Shade / Dye Lot</th>
                         <th>Quantity</th>
@@ -642,20 +790,41 @@ export function DispatchFulfillmentPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {getOrderRolls(fulfillingOrder.code).map((roll) => (
-                        <tr key={roll.id}>
-                          <td className="code" style={{ fontWeight: 900 }}>{roll.code}</td>
-                          <td>{roll.colour} ({roll.dyeLot})</td>
-                          <td className="num">{formatQty(roll.qty, roll.unit, 1)}</td>
-                          <td>{roll.location}</td>
-                          <td>
-                            <StatusBadge status="ACCEPTED" label={roll.dispatchQcPassed ? "QC Verified" : "QC Passed"} />
-                          </td>
-                        </tr>
-                      ))}
+                      {getOrderRolls(fulfillingOrder.code).map((roll) => {
+                        const isChecked = selectedRollIds.has(roll.id);
+                        return (
+                          <tr
+                            key={roll.id}
+                            style={{ backgroundColor: isChecked ? "rgba(43, 76, 126, 0.05)" : "transparent" }}
+                          >
+                            <td>
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => {
+                                  setSelectedRollIds((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(roll.id)) next.delete(roll.id);
+                                    else next.add(roll.id);
+                                    return next;
+                                  });
+                                }}
+                                style={{ width: 18, height: 18, cursor: "pointer" }}
+                              />
+                            </td>
+                            <td className="code" style={{ fontWeight: 900 }}>{roll.code}</td>
+                            <td>{roll.colour} ({roll.dyeLot})</td>
+                            <td className="num">{formatQty(roll.qty, roll.unit, 1)}</td>
+                            <td>{roll.location}</td>
+                            <td>
+                              <StatusBadge status="ACCEPTED" label={roll.dispatchQcPassed ? "QC Verified" : "QC Passed"} />
+                            </td>
+                          </tr>
+                        );
+                      })}
                       {getOrderRolls(fulfillingOrder.code).length === 0 && (
                         <tr>
-                          <td colSpan={5} style={{ textAlign: "center", padding: 18, color: "var(--ink-soft)" }}>
+                          <td colSpan={6} style={{ textAlign: "center", padding: 18, color: "var(--ink-soft)" }}>
                             No accepted rolls in warehouse. Complete pre-dispatch QC in Quality module first.
                           </td>
                         </tr>
@@ -672,12 +841,15 @@ export function DispatchFulfillmentPage() {
                     backgroundColor: "var(--cotton)",
                     padding: "10px 14px",
                     border: "1px solid var(--line)",
+                    flexWrap: "wrap",
+                    gap: 10,
                   }}
                 >
-                  <span style={{ fontSize: 12, fontWeight: 700 }}>
-                    Total Cargo to Load: {getOrderRolls(fulfillingOrder.code).length} Rolls ·{" "}
+                  <span style={{ fontSize: 13, fontWeight: 800 }}>
+                    Cargo Selected: {selectedRollIds.size} of {getOrderRolls(fulfillingOrder.code).length} Rolls ·{" "}
                     {formatQty(
                       getOrderRolls(fulfillingOrder.code)
+                        .filter((r) => selectedRollIds.has(r.id))
                         .reduce((sum, r) => sum.plus(r.qty), new Decimal(0))
                         .toString(),
                       fulfillingOrder.unit,
@@ -692,9 +864,10 @@ export function DispatchFulfillmentPage() {
                       onClick={() =>
                         handleDownloadLoadingManifest(
                           fulfillingOrder,
-                          getOrderRolls(fulfillingOrder.code)
+                          getOrderRolls(fulfillingOrder.code).filter((r) => selectedRollIds.has(r.id))
                         )
                       }
+                      disabled={selectedRollIds.size === 0}
                     >
                       <Download size={13} /> Download Loading Manifest (.txt)
                     </button>
@@ -716,9 +889,14 @@ export function DispatchFulfillmentPage() {
                     type="button"
                     className="btn btn--primary btn--md"
                     onClick={() => setStep(2)}
-                    disabled={getOrderRolls(fulfillingOrder.code).length === 0}
+                    disabled={selectedRollIds.size === 0}
+                    style={{
+                      border: "2px solid #000",
+                      boxShadow: "2px 2px 0 #000",
+                      fontWeight: 800,
+                    }}
                   >
-                    Proceed to Vehicle Details <ArrowRight size={14} />
+                    Proceed to Vehicle Details ({selectedRollIds.size} Rolls) <ArrowRight size={14} />
                   </button>
                 </div>
               </div>

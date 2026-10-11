@@ -1,2 +1,5 @@
-import { OrdersPage } from "@/components/pages/OrdersPages";
-export default function Page() { return <OrdersPage />; }
+import { DispatchFulfillmentPage } from "@/components/pages/DispatchFulfillmentPage";
+
+export default function Page() {
+  return <DispatchFulfillmentPage />;
+}
