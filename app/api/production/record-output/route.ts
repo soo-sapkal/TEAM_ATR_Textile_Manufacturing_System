@@ -73,11 +73,30 @@ export async function POST(req: Request) {
     if (operation.stage === "SPINNING") {
       // Consume Raw Yarn if available
       const rawYarnRes = await client.query("SELECT * FROM yarn_batches WHERE section = 'RAW_YARN' AND available >= $1 FOR UPDATE LIMIT 1", [totalConsumed.toNumber()]);
+      let itemCode = rawYarnRes.rows[0]?.item_code;
       if (rawYarnRes.rows.length > 0) {
         await client.query(
           "UPDATE yarn_batches SET on_hand = on_hand - $1, available = available - $1 WHERE id = $2",
           [totalConsumed.toNumber(), rawYarnRes.rows[0].id]
         );
+      }
+
+      // If raw yarn batch wasn't found or had no item_code, resolve a valid yarn item code from yarn_items
+      if (!itemCode) {
+        const bomRes = await client.query(
+          `SELECT y.code FROM bill_of_materials b 
+           JOIN products p ON b.product_id = p.id 
+           JOIN orders o ON (o.product = p.name OR o.product = p.code) 
+           JOIN yarn_items y ON b.yarn_item_id = y.id 
+           WHERE o.code = $1 LIMIT 1`,
+          [operation.order_code]
+        );
+        if (bomRes.rows.length > 0) {
+          itemCode = bomRes.rows[0].code;
+        } else {
+          const firstYarnRes = await client.query("SELECT code FROM yarn_items ORDER BY code ASC LIMIT 1");
+          itemCode = firstYarnRes.rows[0]?.code || "YRN-COT-40S";
+        }
       }
 
       // Materialize Spun Yarn into spinning storage
@@ -87,7 +106,7 @@ export async function POST(req: Request) {
           [
             crypto.randomUUID(),
             `SPUN-${operation.order_code}-${Math.floor(Math.random() * 10000)}`,
-            "Y-COT-30S",
+            itemCode,
             "In-House Spinning",
             operation.code,
             parsedGood.toNumber(),
@@ -144,6 +163,22 @@ export async function POST(req: Request) {
         await client.query(
           "UPDATE fabric_rolls SET section = 'DYED_FABRIC', status = 'AWAITING_INSPECTION', colour = (SELECT colour FROM orders WHERE code = $1) WHERE id = $2",
           [operation.order_code, roll.id]
+        );
+      } else if (parsedGood.gt(0)) {
+        await client.query(
+          "INSERT INTO fabric_rolls (id, code, order_code, buyer, qty, unit, colour, location, section, status, machine_code) VALUES ($1, $2, $3, $4, $5, $6, COALESCE((SELECT colour FROM orders WHERE code = $3), 'Navy Blue'), $7, $8, $9, $10)",
+          [
+            crypto.randomUUID(),
+            `ROLL-D-${Math.floor(Math.random() * 10000)}`,
+            operation.order_code,
+            "Internal",
+            parsedGood.toNumber(),
+            "M",
+            "Dyeing Storage Bay D",
+            "DYED_FABRIC",
+            "AWAITING_INSPECTION",
+            operation.machine_code || "M-UNKNOWN"
+          ]
         );
       }
     }
