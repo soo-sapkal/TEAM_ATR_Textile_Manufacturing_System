@@ -196,7 +196,7 @@ export function DemoProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ email: selected.email, password: "password123" })
       });
     } catch {}
-    toast(`Signed in as ${selected.name}`, "Session active · Connected to Supabase", "success");
+    toast(`Signed in as ${selected.name}`, "Session active · Factory systems connected", "success");
     refreshData();
   }, [toast, refreshData]);
 

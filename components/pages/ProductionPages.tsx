@@ -575,7 +575,7 @@ function MyWorkPage() {
       {loadingTasks && (
         <div className="info-strip" style={{ marginBottom: 20 }}>
           <Activity size={18}/>
-          <div><strong>Loading tasks…</strong><div>Fetching live assignment records from Supabase database.</div></div>
+          <div><strong>Loading tasks…</strong><div>Fetching live assignment records from production schedule.</div></div>
         </div>
       )}
 

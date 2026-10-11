@@ -262,7 +262,7 @@ export function NewOrderPage() {
           )}
         </div>
       </Card>
-      <div className="permission-note"><strong>Live Factory Inventory</strong><p className="cell-secondary">Calculates required yarn weight based on product recipe yield and compares against real-time Supabase warehouse balances.</p></div>
+      <div className="permission-note"><strong>Live Factory Inventory</strong><p className="cell-secondary">Calculates required yarn weight based on product recipe yield and compares against real-time warehouse balances.</p></div>
     </aside></div>
   </>;
 }
@@ -413,7 +413,7 @@ export function OrderDetailPage({ id, hideCostAndNextSteps }: { id: string; hide
         </>
       )}
       
-      <Card className="col-12" title="Live System Boundary"><InfoStrip tone="warning">This page dynamically reads and updates orders from the live Supabase API! Material checks are synchronized with warehouse stock.</InfoStrip><LinkButton href={`/rolls?order=${encodeURIComponent(order.code)}`} variant="quiet">Related rolls <ArrowRight size={12}/></LinkButton></Card>
+      <Card className="col-12" title="Order Material Fulfillment"><InfoStrip tone="warning">Order statuses and material checks are synchronized with real-time warehouse stock.</InfoStrip><LinkButton href={`/rolls?order=${encodeURIComponent(order.code)}`} variant="quiet">Related rolls <ArrowRight size={12}/></LinkButton></Card>
     </div>
   </>;
 }

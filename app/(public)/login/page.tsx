@@ -122,12 +122,12 @@ export default function LoginPage() {
     <section className="login-story">
       <Link href="/" aria-label="Loom Ledger home"><BrandMark /></Link>
       <div><span className="kicker" style={{ color: "var(--turmeric)" }}>Check in. Check out.</span><h1>Everything in between<br/>is recorded.</h1><p>Sign in to Loom Ledger for a role-specific view of yarn, production, quality, dispatch, and the books.</p></div>
-      <div className="hero-proof"><span className="hero-proof__dot" style={{ background: "var(--neem)" }}/> Live System · Supabase Connected</div>
+      <div className="hero-proof"><span className="hero-proof__dot" style={{ background: "var(--neem)" }}/> Manufacturing Execution System · Active</div>
     </section>
     <section className="login-form-panel" aria-labelledby="signin-title">
       <div style={{ maxWidth: 620, margin: "0 auto" }}>
         <span className="kicker">Everest Textile Mills</span><h2 id="signin-title" style={{ font: "900 39px/.98 var(--font-display)", letterSpacing: "-.04em", margin: "12px 0 8px" }}>Sign in</h2><p style={{ marginTop: 0, color: "var(--ink-soft)", fontSize: 12 }}>Choose a staff persona or enter credentials. Each role sees only the permissions in its profile.</p>
-        <div className="info-strip" style={{ background: "var(--neem-soft, #f0fdf4)", borderColor: "var(--neem, #16a34a)" }}><ShieldCheck size={17} style={{ color: "var(--neem, #16a34a)" }}/><div><strong>Live Authentication Active</strong><div>Role permissions are verified with Supabase and issued via secure session cookies.</div></div></div>
+        <div className="info-strip" style={{ background: "var(--neem-soft, #f0fdf4)", borderColor: "var(--neem, #16a34a)" }}><ShieldCheck size={17} style={{ color: "var(--neem, #16a34a)" }}/><div><strong>Secure Portal Access</strong><div>Role-based access control active for factory operations and customer commitments.</div></div></div>
         <form onSubmit={submit} className="stack" style={{ marginTop: 18 }}>
           <Field label="Email"><TextInput autoComplete="username" type="email" placeholder="name@everest.demo" value={email} onChange={(event) => setEmail(event.target.value)} required /></Field>
           <Field label="Password" hint="Use “password123” with any listed staff email."><div style={{ position: "relative" }}><TextInput autoComplete="current-password" type={showPassword ? "text" : "password"} placeholder="Enter password" value={password} onChange={(event) => setPassword(event.target.value)} required style={{ paddingRight: 48 }} /><button type="button" aria-label={showPassword ? "Hide password" : "Show password"} className="icon-button" style={{ position: "absolute", right: 4, top: 3, border: 0, boxShadow: "none" }} onClick={() => setShowPassword((current) => !current)}>{showPassword ? <EyeOff size={17}/> : <Eye size={17}/>}</button></div></Field>

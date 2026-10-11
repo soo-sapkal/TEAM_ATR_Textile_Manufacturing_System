@@ -152,7 +152,7 @@ export function DashboardPage() {
           <>
             <Tag>SHIFT B · 14:00–22:00</Tag>
             <Tag>ASIA/KOLKATA</Tag>
-            <Tag>LIVE SYNC · SUPABASE</Tag>
+            <Tag>LIVE FACTORY SYNC</Tag>
           </>
         }
       />
