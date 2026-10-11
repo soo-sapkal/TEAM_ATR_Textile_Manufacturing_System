@@ -1,9 +1,5 @@
-import { Pool } from "pg";
+import { pool } from "./lib/db/pool";
 import { SignJWT } from "jose";
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
 
 const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || "super-secret-key-for-loom-ledger");
 
@@ -64,12 +60,12 @@ async function setupTestData(client: any) {
 
   // Create rolls
   await client.query(`
-    INSERT INTO fabric_rolls (id, code, order_code, buyer, qty, unit, colour, status, machine_code, location)
+    INSERT INTO fabric_rolls (id, code, order_code, buyer, qty, unit, colour, status, machine_code, location, section)
     VALUES 
-    ($1, $2, $9, 'Test Buyer', 40, 'M', 'Red', 'ACCEPTED', 'M01', 'FG Bay'),
-    ($3, $4, $9, 'Test Buyer', 60, 'M', 'Red', 'ACCEPTED', 'M01', 'FG Bay'),
-    ($5, $6, $10, 'Test Buyer', 50, 'M', 'Blue', 'ACCEPTED', 'M01', 'FG Bay'),
-    ($7, $8, $9, 'Test Buyer', 10, 'M', 'Red', 'AWAITING_INSPECTION', 'M01', 'QC Bay')
+    ($1, $2, $9, 'Test Buyer', 40, 'M', 'Red', 'ACCEPTED', 'M01', 'FG Bay', 'FINISHED_GOODS'),
+    ($3, $4, $9, 'Test Buyer', 60, 'M', 'Red', 'ACCEPTED', 'M01', 'FG Bay', 'FINISHED_GOODS'),
+    ($5, $6, $10, 'Test Buyer', 50, 'M', 'Blue', 'ACCEPTED', 'M01', 'FG Bay', 'FINISHED_GOODS'),
+    ($7, $8, $9, 'Test Buyer', 10, 'M', 'Red', 'AWAITING_INSPECTION', 'M01', 'QC Bay', 'DYED_FABRIC')
   `, [rollId1, rollId1, rollId2, rollId2, rollIdOther, rollIdOther, rollIdUninspected, rollIdUninspected, orderCode, otherOrderCode]);
 
   return { orderCode, otherOrderCode, rollId1, rollId2, rollIdOther, rollIdUninspected };
@@ -128,8 +124,9 @@ async function runTests() {
     orderCode: "NONEXISTENT", rollIds: [rollId1], buyer: "Test"
   }, false, /Order does not exist/);
 
+  const invPrefix = `INV-${Date.now()}`;
   allPassed &&= await runTest("6. Successful partial dispatch", {
-    orderCode, rollIds: [rollId1], buyer: "Test Buyer", vehicle: "Truck 1", plannedAt: new Date().toISOString(), invoice: "INV-001"
+    orderCode, rollIds: [rollId1], buyer: "Test Buyer", vehicle: "Truck 1", plannedAt: new Date().toISOString(), invoice: `${invPrefix}-1`
   }, true);
 
   // Validate DB state after partial dispatch
@@ -142,11 +139,11 @@ async function runTests() {
   }
 
   allPassed &&= await runTest("7. Reject previously dispatched roll", {
-    orderCode, rollIds: [rollId1], buyer: "Test Buyer", plannedAt: new Date().toISOString(), invoice: "INV-002"
+    orderCode, rollIds: [rollId1], buyer: "Test Buyer", plannedAt: new Date().toISOString(), invoice: `${invPrefix}-2`
   }, false, /is not eligible for dispatch/);
 
   allPassed &&= await runTest("8. Successful full dispatch", {
-    orderCode, rollIds: [rollId2], buyer: "Test Buyer", vehicle: "Truck 2", plannedAt: new Date().toISOString(), invoice: "INV-003"
+    orderCode, rollIds: [rollId2], buyer: "Test Buyer", vehicle: "Truck 2", plannedAt: new Date().toISOString(), invoice: `${invPrefix}-3`
   }, true);
 
   // Validate DB state after full dispatch

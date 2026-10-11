@@ -1,12 +1,8 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { Pool } from "pg";
+import { pool } from "@/lib/db/pool";
 import { verifyToken } from "@/lib/auth/auth";
 import Decimal from "decimal.js";
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
 
 export async function POST(req: Request) {
   let client;
@@ -74,6 +70,9 @@ export async function POST(req: Request) {
       }
       if (roll.status !== "ACCEPTED") {
         throw new Error(`Validation failed: Roll ${roll.code} is not eligible for dispatch. Status must be ACCEPTED, but is ${roll.status}`);
+      }
+      if (roll.section !== "FINISHED_GOODS") {
+        throw new Error(`Validation failed: Roll ${roll.code} is not in final goods inventory (finished goods). Current section is ${roll.section}`);
       }
     }
 

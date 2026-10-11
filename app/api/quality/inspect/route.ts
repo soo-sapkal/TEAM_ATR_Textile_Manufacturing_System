@@ -31,13 +31,23 @@ export async function POST(req: Request) {
 
     if (rollErr || !roll) throw new Error("Roll not found");
 
-    // Update Roll status
+    // Rule: Quality inspection must operate on dyed output
+    if (roll.section !== "DYED_FABRIC") {
+      throw new Error(`Cannot inspect roll: Quality inspection only operates on dyed output from dyeing storage. Current roll section is '${roll.section}'.`);
+    }
+
+    const nextStatus = (result === "PASS") ? "ACCEPTED" : result;
+    const nextSection = (result === "PASS" || result === "ACCEPTED") ? "FINISHED_GOODS" : (result === "QUARANTINE" || result === "REJECT") ? "QUARANTINE" : roll.section;
+    const nextLocation = (nextSection === "FINISHED_GOODS") ? "FG Warehouse Bay 1" : (location || roll.location);
+
+    // Update Roll status and move to Final Goods Inventory if passed
     const { error: updateErr } = await supabase
       .from("fabric_rolls")
       .update({
-        status: result,
+        status: nextStatus,
+        section: nextSection,
         defect: defect || null,
-        location: location || roll.location
+        location: nextLocation
       })
       .eq("id", rollId);
 

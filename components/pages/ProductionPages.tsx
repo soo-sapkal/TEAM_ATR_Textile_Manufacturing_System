@@ -24,6 +24,69 @@ export function ProductionRoute({ path, id }: { path: string; id?: string }) {
 
 const PRIORITY_RANK = { "URGENT": 1, "HIGH": 2, "NORMAL": 3, "LOW": 4 };
 
+export function computeOpReadiness(op: Operation, data: any) {
+  if (op.stage === "SPINNING") {
+    const totalRaw = (data.yarnBatches || [])
+      .filter((b: any) => b.section === "RAW_YARN" && b.status === "AVAILABLE")
+      .reduce((sum: number, b: any) => sum + parseFloat(b.available || 0), 0);
+    const committedRaw = (data.operations || [])
+      .filter((o: any) => o.stage === "SPINNING" && o.id !== op.id && ["PLANNED", "IN_PROGRESS", "PAUSED"].includes(o.status) && o.machineCode)
+      .reduce((sum: number, o: any) => sum + Math.max(0, parseFloat(o.target || 0) - parseFloat(o.good || 0)), 0);
+    const available = Math.max(0, totalRaw - committedRaw);
+    const isBlocked = available <= 0;
+    return {
+      available,
+      unit: op.unit || "KG",
+      isBlocked,
+      reason: isBlocked ? "Cannot assign spinning: no raw yarn available in warehouse. Wait for inventory receipt." : ""
+    };
+  }
+
+  if (op.stage === "WEAVING") {
+    const totalSpun = (data.yarnBatches || [])
+      .filter((b: any) => b.orderCode === op.orderCode && b.section === "SPUN_YARN" && b.status === "AVAILABLE")
+      .reduce((sum: number, b: any) => sum + parseFloat(b.available || 0), 0);
+    const committedSpun = (data.operations || [])
+      .filter((o: any) => o.orderCode === op.orderCode && o.stage === "WEAVING" && o.id !== op.id && ["PLANNED", "IN_PROGRESS", "PAUSED"].includes(o.status) && o.machineCode)
+      .reduce((sum: number, o: any) => sum + Math.max(0, parseFloat(o.target || 0) - parseFloat(o.good || 0)), 0);
+    const available = Math.max(0, totalSpun - committedSpun);
+    const isBlocked = available <= 0;
+    return {
+      available,
+      unit: "KG",
+      isBlocked,
+      reason: isBlocked 
+        ? totalSpun <= 0
+          ? "Cannot assign weaving: no spun yarn is available in spinning storage. Complete spinning first."
+          : "Cannot assign weaving: all spun yarn is already committed to active weaving tasks."
+        : ""
+    };
+  }
+
+  if (op.stage === "DYEING") {
+    const totalWoven = (data.rolls || [])
+      .filter((r: any) => r.orderCode === op.orderCode && r.section === "WOVEN_FABRIC" && !["REJECTED", "QUARANTINED", "RESERVED"].includes(r.status))
+      .reduce((sum: number, r: any) => sum + parseFloat(r.qty || 0), 0);
+    const committedWoven = (data.operations || [])
+      .filter((o: any) => o.orderCode === op.orderCode && o.stage === "DYEING" && o.id !== op.id && ["PLANNED", "IN_PROGRESS", "PAUSED"].includes(o.status) && o.machineCode)
+      .reduce((sum: number, o: any) => sum + Math.max(0, parseFloat(o.target || 0) - parseFloat(o.good || 0)), 0);
+    const available = Math.max(0, totalWoven - committedWoven);
+    const isBlocked = available <= 0;
+    return {
+      available,
+      unit: "M",
+      isBlocked,
+      reason: isBlocked 
+        ? totalWoven <= 0
+          ? "Cannot assign dyeing: no woven fabric is available in weaving storage. Complete weaving first."
+          : "Cannot assign dyeing: all woven fabric is already committed to active dyeing tasks."
+        : ""
+    };
+  }
+
+  return { available: 999999, unit: op.unit, isBlocked: false, reason: "" };
+}
+
 function ProductionBoard() {
   const { data } = useDemo();
   const [currentDate, setCurrentDate] = useState(new Date().toISOString().split('T')[0]);
@@ -206,9 +269,21 @@ function OperationCard({ operation, onOrderClick }: { operation: Operation; onOr
   const [selectedDate, setSelectedDate] = useState(initialDate);
   const [selectedShift, setSelectedShift] = useState(initialShift);
   const [selectedOperator, setSelectedOperator] = useState(operation.operators[0] ?? "");
+  const [customTarget, setCustomTarget] = useState(operation.target.toString());
   const [commandRevision, setCommandRevision] = useState(1);
   const [assigning, setAssigning] = useState(false);
   
+  // 1. Skill-based operator qualification
+  const eligibleOperators = DEMO_USERS.filter((u) => {
+    if (!u.roles.includes("MACHINE_OPERATOR")) return false;
+    const nameLower = u.name.toLowerCase();
+    const opSkill = (u as any).skill || (nameLower.includes("spinning") ? "SPINNING" : nameLower.includes("weaving") ? "WEAVING" : nameLower.includes("dyeing") ? "DYEING" : "ALL");
+    return opSkill === "ALL" || opSkill === operation.stage;
+  });
+
+  // 2. Upstream material readiness check
+  const readiness = computeOpReadiness(operation, data);
+
   const canAssign = hasPermission(user, "production.assign") && ["PLANNED", "PAUSED"].includes(operation.status);
   const eligibleMachines = data.machines.filter((machine) => machine.stage === operation.stage && machine.status === "IDLE" && (!machine.operationId || machine.operationId === operation.id) && !data.operations.some((other) => other.id !== operation.id && other.machineCode === machine.code && ["PLANNED", "IN_PROGRESS", "PAUSED"].includes(other.status)));
   const selectedCode = eligibleMachines.some((machine) => machine.code === selectedMachine) ? selectedMachine : eligibleMachines[0]?.code ?? "";
@@ -217,19 +292,121 @@ function OperationCard({ operation, onOrderClick }: { operation: Operation; onOr
   const alreadyAssigned = selectedCode === operation.machineCode && fullShiftString === (operation.shift ?? "") && selectedOperator === (operation.operators[0] ?? "") && data.machines.some((machine) => machine.code === selectedCode && machine.operationId === operation.id);
   const percent = new Decimal(operation.target).gt(0) ? Decimal.min(100, new Decimal(operation.good).div(operation.target).mul(100)).toNumber() : 0;
   
-  const estimatedHours = new Decimal(operation.target).div(50).toNumber();
+  const targetNum = parseFloat(customTarget) || parseFloat(operation.target as any || 0);
+  const estimatedHours = new Decimal(targetNum).div(50).toNumber();
   const isLarge = estimatedHours > 8;
   const [autoSplit, setAutoSplit] = useState(isLarge);
 
-  return <article className="stage-card"><div className="stage-card__meta"><span>{operation.code}</span><StatusBadge status={operation.status}/></div><h3>{operation.stage}</h3><div className="stage-card__meta"><span>{operation.machineCode ?? "Unassigned"}</span><span>{operation.shift ?? "Shift not assigned"}</span></div><p className="cell-secondary">{(Array.isArray(operation.operators) ? operation.operators : []).join(" · ") || "Operator not assigned"}</p><Meter value={operation.good} total={operation.target} label="Good output" tone={percent >= 100 ? "neem" : "indigo"}/><div style={{ display: "flex", justifyContent: "space-between", marginTop: 10 }}><span className="cell-secondary">Waste {formatQty(operation.waste, operation.unit, 1)} · Reject {formatQty(operation.reject, operation.unit, 1)}</span><Link className="btn btn--secondary btn--sm" href={`/production/operations/${operation.id}`}>Open console <ArrowRight size={12}/></Link></div>{canAssign && <div className="operation-assignment" style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 16 }}>
-    
-    <div style={{ padding: 12, background: "var(--indigo-soft)", borderRadius: 4, display: "flex", flexDirection: "column", gap: 4 }}>
-      <span style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>⏱️ Estimated time: {estimatedHours.toFixed(1)} hours <span style={{ fontWeight: 400, color: "var(--ink-soft)" }}>(@50 {operation.unit}/hr)</span></span>
-      {isLarge && <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13 }}><input type="checkbox" checked={autoSplit} onChange={e => setAutoSplit(e.target.checked)} /> <span>Auto-split remaining {Math.max(0, estimatedHours - 8).toFixed(1)} hrs to next shift</span></label>}
+  return <article className="stage-card">
+    <div className="stage-card__meta"><span>{operation.code}</span><StatusBadge status={operation.status}/></div>
+    <h3>{operation.stage}</h3>
+    <div className="stage-card__meta"><span>{operation.machineCode ?? "Unassigned"}</span><span>{operation.shift ?? "Shift not assigned"}</span></div>
+    <p className="cell-secondary">{(Array.isArray(operation.operators) ? operation.operators : []).join(" · ") || "Operator not assigned"}</p>
+    <Meter value={operation.good} total={operation.target} label="Good output" tone={percent >= 100 ? "neem" : "indigo"}/>
+    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10 }}>
+      <span className="cell-secondary">Waste {formatQty(operation.waste, operation.unit, 1)} · Reject {formatQty(operation.reject, operation.unit, 1)}</span>
+      <Link className="btn btn--secondary btn--sm" href={`/production/operations/${operation.id}`}>Open console <ArrowRight size={12}/></Link>
     </div>
-    
-    <Field label="Date"><TextInput type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} disabled={assigning} /></Field><Field label="Shift"><SelectInput value={selectedShift} onChange={(event) => setSelectedShift(event.target.value)} disabled={assigning}><option value="">Select shift</option><option value="A · 06:00–14:00">A · 06:00–14:00</option><option value="B · 14:00–22:00">B · 14:00–22:00</option><option value="C · 22:00–06:00">C · 22:00–06:00</option></SelectInput></Field><Field label="Machine"><SelectInput value={selectedCode} onChange={(event) => setSelectedMachine(event.target.value)} disabled={!eligibleMachines.length || assigning}><option value="">No eligible machine</option>{eligibleMachines.map((machine) => <option key={machine.id} value={machine.code}>{machine.code} · {machine.name}</option>)}</SelectInput></Field><Field label="Operator"><SelectInput value={selectedOperator} onChange={(event) => setSelectedOperator(event.target.value)} disabled={assigning}><option value="">Select operator</option>{DEMO_USERS.filter(u => u.roles.includes("MACHINE_OPERATOR")).map(u => <option key={u.id} value={u.name.split(" (")[0]}>{u.name}</option>)}</SelectInput></Field><Button size="sm" disabled={!selectedCode || !selectedShift || !selectedDate || !selectedOperator || assigning || alreadyAssigned} onClick={async () => { setAssigning(true); try { const res = await fetch("/api/production/assign-machine", { method: "POST", body: JSON.stringify({ operationId: operation.id, machineId: selectedCode, shift: selectedShift, date: selectedDate, operator: selectedOperator, actor: user?.name, autoSplit }) }); const outcome = await res.json(); if (outcome.success) { toast("Assignment saved", isLarge && autoSplit ? "Assigned and remaining quantity auto-split to next shift." : "Operation assigned for the day.", "success"); setCommandRevision((current) => current + 1); window.location.reload(); } else { toast("Error", outcome.error, "error"); } } catch (err: any) { toast("Error", err.message, "error"); } finally { setAssigning(false); } }}>{assigning ? "Assigning…" : alreadyAssigned ? "Saved" : "Save Assignment"}</Button>{!eligibleMachines.length && <span className="field__hint">No unreserved IDLE {operation.stage.toLowerCase()} machine is currently available.</span>}</div>}{!canAssign && ["PLANNED", "PAUSED"].includes(operation.status) && <span className="field__hint">Machine assignment requires production.assign.</span>}
-  {order?.materialShortage && operation.stage !== "SPINNING" && <div className="field__hint" style={{ color: "var(--madder)", fontWeight: "bold", marginTop: 8 }}>⚠️ Warning: Upstream material shortage. Assigning this task may stall production.</div>}
+
+    {/* Upstream material status banner */}
+    <div style={{ marginTop: 12 }}>
+      {readiness.isBlocked ? (
+        <div style={{ padding: "8px 12px", background: "var(--madder-soft)", border: "1px solid var(--madder)", color: "var(--madder)", borderRadius: 4, fontWeight: 600, fontSize: 13 }}>
+          ⚠️ {readiness.reason}
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <div style={{ padding: "6px 10px", background: "var(--sand)", borderRadius: 4, fontSize: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span>Eligible upstream material in storage:</span>
+            <strong>{readiness.available.toFixed(1)} {readiness.unit}</strong>
+          </div>
+          {readiness.available < parseFloat(operation.target as any || 0) && (
+            <span style={{ fontSize: 11, color: "var(--indigo)", fontWeight: 600 }}>
+              ℹ️ Partial material: {readiness.available.toFixed(1)} {readiness.unit} available for {operation.stage}. Target capped to available; remainder will stay planned.
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+
+    {canAssign && (
+      <div className="operation-assignment" style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 14 }}>
+        <div style={{ padding: 12, background: "var(--indigo-soft)", borderRadius: 4, display: "flex", flexDirection: "column", gap: 4 }}>
+          <span style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>⏱️ Estimated time: {estimatedHours.toFixed(1)} hours <span style={{ fontWeight: 400, color: "var(--ink-soft)" }}>(@50 {operation.unit}/hr)</span></span>
+          {isLarge && <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13 }}><input type="checkbox" checked={autoSplit} onChange={e => setAutoSplit(e.target.checked)} /> <span>Auto-split remaining {Math.max(0, estimatedHours - 8).toFixed(1)} hrs to next shift</span></label>}
+        </div>
+
+        <Field label={`Target Quantity (${operation.unit})`}>
+          <TextInput 
+            type="number" 
+            value={customTarget} 
+            onChange={(e) => setCustomTarget(e.target.value)} 
+            disabled={assigning || readiness.isBlocked} 
+          />
+        </Field>
+        
+        <Field label="Date"><TextInput type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} disabled={assigning || readiness.isBlocked} /></Field>
+        <Field label="Shift">
+          <SelectInput value={selectedShift} onChange={(event) => setSelectedShift(event.target.value)} disabled={assigning || readiness.isBlocked}>
+            <option value="">Select shift</option>
+            <option value="A · 06:00–14:00">A · 06:00–14:00</option>
+            <option value="B · 14:00–22:00">B · 14:00–22:00</option>
+            <option value="C · 22:00–06:00">C · 22:00–06:00</option>
+          </SelectInput>
+        </Field>
+        <Field label="Machine">
+          <SelectInput value={selectedCode} onChange={(event) => setSelectedMachine(event.target.value)} disabled={!eligibleMachines.length || assigning || readiness.isBlocked}>
+            <option value="">No eligible machine</option>
+            {eligibleMachines.map((machine) => <option key={machine.id} value={machine.code}>{machine.code} · {machine.name}</option>)}
+          </SelectInput>
+        </Field>
+        <Field label="Operator (Filtered by skill)">
+          <SelectInput value={selectedOperator} onChange={(event) => setSelectedOperator(event.target.value)} disabled={assigning || readiness.isBlocked}>
+            <option value="">Select operator</option>
+            {eligibleOperators.map((u) => <option key={u.id} value={u.name.split(" (")[0]}>{u.name}</option>)}
+          </SelectInput>
+        </Field>
+
+        <Button 
+          size="sm" 
+          disabled={readiness.isBlocked || !selectedCode || !selectedShift || !selectedDate || !selectedOperator || assigning || alreadyAssigned} 
+          onClick={async () => { 
+            setAssigning(true); 
+            try { 
+              const res = await fetch("/api/production/assign-machine", { 
+                method: "POST", 
+                body: JSON.stringify({ 
+                  operationId: operation.id, 
+                  machineId: selectedCode, 
+                  shift: selectedShift, 
+                  date: selectedDate, 
+                  operator: selectedOperator, 
+                  actor: user?.name, 
+                  autoSplit,
+                  target: customTarget ? parseFloat(customTarget) : undefined
+                }) 
+              }); 
+              const outcome = await res.json(); 
+              if (outcome.success) { 
+                toast("Assignment saved", isLarge && autoSplit ? "Assigned and remaining quantity auto-split to next shift." : "Operation assigned for the day.", "success"); 
+                setCommandRevision((current) => current + 1); 
+                window.location.reload(); 
+              } else { 
+                toast("Error", outcome.error, "error"); 
+              } 
+            } catch (err: any) { 
+              toast("Error", err.message, "error"); 
+            } finally { 
+              setAssigning(false); 
+            } 
+          }}
+        >
+          {assigning ? "Assigning…" : alreadyAssigned ? "Saved" : readiness.isBlocked ? "Blocked by Upstream Material" : "Save Assignment"}
+        </Button>
+        {!eligibleMachines.length && <span className="field__hint">No unreserved IDLE {operation.stage.toLowerCase()} machine is currently available.</span>}
+      </div>
+    )}
+    {!canAssign && ["PLANNED", "PAUSED"].includes(operation.status) && <span className="field__hint">Machine assignment requires production.assign.</span>}
   </article>;
 }
 
@@ -1270,13 +1447,20 @@ export function AssignTaskModal({ operatorName, shift, unassignedOps, onClose }:
   const [selectedOpId, setSelectedOpId] = useState("");
   const [selectedMachine, setSelectedMachine] = useState("");
   const [assigning, setAssigning] = useState(false);
+  const [taskTarget, setTaskTarget] = useState("");
   
   const selectedOp = unassignedOps.find(o => o.id === selectedOpId);
   const eligibleMachines = selectedOp ? data.machines.filter(m => m.stage === selectedOp.stage && m.status === "IDLE") : [];
 
-  const estimatedHours = selectedOp ? new Decimal(selectedOp.target).div(50).toNumber() : 0;
+  const readiness = selectedOp ? computeOpReadiness(selectedOp, data) : null;
+  const targetNum = taskTarget ? parseFloat(taskTarget) : (selectedOp ? parseFloat(selectedOp.target as any || 0) : 0);
+  const estimatedHours = targetNum > 0 ? new Decimal(targetNum).div(50).toNumber() : 0;
   
   const handleAssign = async () => {
+    if (readiness?.isBlocked) {
+      toast("Cannot assign", readiness.reason, "error");
+      return;
+    }
     setAssigning(true);
     try {
       const res = await fetch("/api/production/assign-machine", {
@@ -1288,7 +1472,8 @@ export function AssignTaskModal({ operatorName, shift, unassignedOps, onClose }:
            date: shift.split(" | ")[0] || new Date().toISOString().split('T')[0],
            operator: operatorName,
            actor: user?.name,
-           autoSplit: estimatedHours > 8
+           autoSplit: estimatedHours > 8,
+           target: taskTarget ? parseFloat(taskTarget) : undefined
         })
       });
       const outcome = await res.json();
@@ -1315,25 +1500,84 @@ export function AssignTaskModal({ operatorName, shift, unassignedOps, onClose }:
         
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <Field label="Order Task">
-            <SelectInput value={selectedOpId} onChange={e => { setSelectedOpId(e.target.value); setSelectedMachine(""); }} disabled={assigning}>
+            <SelectInput 
+              value={selectedOpId} 
+              onChange={e => { 
+                const newId = e.target.value;
+                setSelectedOpId(newId); 
+                setSelectedMachine(""); 
+                const found = unassignedOps.find(o => o.id === newId);
+                if (found) {
+                  const r = computeOpReadiness(found, data);
+                  setTaskTarget(Math.min(parseFloat(found.target as any || 0), r.available).toString());
+                } else {
+                  setTaskTarget("");
+                }
+              }} 
+              disabled={assigning}
+            >
                <option value="">Select task...</option>
-               {unassignedOps.filter(op => { const lower = operatorName.toLowerCase(); const hasSpin = lower.includes("spinning"); const hasWeave = lower.includes("weaving"); const hasDye = lower.includes("dyeing"); if (!hasSpin && !hasWeave && !hasDye) return true; return (hasSpin && op.stage === "SPINNING") || (hasWeave && op.stage === "WEAVING") || (hasDye && op.stage === "DYEING"); }).map(op => {
-                 const order = data.orders.find(o => o.code === op.orderCode);
-                 const est = new Decimal(op.target).div(50).toNumber().toFixed(1);
-                 return <option key={op.id} value={op.id}>{op.orderCode} · {op.stage} (Est: {est} hrs)</option>;
+               {unassignedOps.filter(op => { 
+                 const lower = operatorName.toLowerCase(); 
+                 const hasSpin = lower.includes("spinning"); 
+                 const hasWeave = lower.includes("weaving"); 
+                 const hasDye = lower.includes("dyeing"); 
+                 if (!hasSpin && !hasWeave && !hasDye) return true; 
+                 return (hasSpin && op.stage === "SPINNING") || (hasWeave && op.stage === "WEAVING") || (hasDye && op.stage === "DYEING"); 
+               }).map(op => {
+                 const r = computeOpReadiness(op, data);
+                 return (
+                   <option key={op.id} value={op.id} disabled={r.isBlocked}>
+                     {op.orderCode} · {op.stage} {r.isBlocked ? `⛔ [Blocked: No upstream stock]` : `(Avail: ${r.available.toFixed(1)} ${r.unit})`}
+                   </option>
+                 );
                })}
             </SelectInput>
           </Field>
+
+          {/* Upstream material status banner */}
+          {selectedOp && readiness && (
+            <div>
+              {readiness.isBlocked ? (
+                <div style={{ padding: "8px 12px", background: "var(--madder-soft)", border: "1px solid var(--madder)", color: "var(--madder)", borderRadius: 4, fontWeight: 600, fontSize: 13 }}>
+                  ⚠️ {readiness.reason}
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <div style={{ padding: "6px 10px", background: "var(--sand)", borderRadius: 4, fontSize: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span>Eligible upstream material in storage:</span>
+                    <strong>{readiness.available.toFixed(1)} {readiness.unit}</strong>
+                  </div>
+                  {readiness.available < parseFloat(selectedOp.target as any || 0) && (
+                    <span style={{ fontSize: 11, color: "var(--indigo)", fontWeight: 600 }}>
+                      ℹ️ Partial material: {readiness.available.toFixed(1)} {readiness.unit} available. Remainder stays planned.
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           
           {selectedOp && (
             <>
+              {!readiness?.isBlocked && (
+                <Field label={`Target Quantity (${selectedOp.unit})`}>
+                  <TextInput 
+                    type="number" 
+                    value={taskTarget} 
+                    onChange={e => setTaskTarget(e.target.value)} 
+                    disabled={assigning} 
+                  />
+                </Field>
+              )}
+
               <div style={{ padding: 12, background: "var(--indigo-soft)", borderRadius: 4, display: "flex", flexDirection: "column", gap: 4 }}>
                 <span style={{ fontWeight: 700 }}>⏱️ Estimated time: {estimatedHours.toFixed(1)} hours</span>
                 {estimatedHours > 8 && <span style={{ fontSize: 12 }}>Note: Exceeds 8 hrs. Will auto-split remaining qty to next shift.</span>}
               </div>
               
               <Field label="Machine">
-                <SelectInput value={selectedMachine} onChange={e => setSelectedMachine(e.target.value)} disabled={assigning || !eligibleMachines.length}>
+                <SelectInput value={selectedMachine} onChange={e => setSelectedMachine(e.target.value)} disabled={assigning || !eligibleMachines.length || readiness?.isBlocked}>
                   <option value="">{eligibleMachines.length ? "Select machine..." : `No eligible IDLE ${selectedOp.stage} machines`}</option>
                   {eligibleMachines.map(m => <option key={m.id} value={m.code}>{m.code} · {m.name}</option>)}
                 </SelectInput>
@@ -1343,8 +1587,12 @@ export function AssignTaskModal({ operatorName, shift, unassignedOps, onClose }:
           
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
             <Button variant="secondary" onClick={onClose} disabled={assigning}>Cancel</Button>
-            <Button variant="primary" disabled={assigning || !selectedOpId || !selectedMachine} onClick={handleAssign}>
-              {assigning ? "Assigning..." : "Assign Task"}
+            <Button 
+              variant="primary" 
+              disabled={assigning || !selectedOpId || !selectedMachine || readiness?.isBlocked} 
+              onClick={handleAssign}
+            >
+              {assigning ? "Assigning..." : readiness?.isBlocked ? "Blocked by Upstream Material" : "Assign Task"}
             </Button>
           </div>
         </div>

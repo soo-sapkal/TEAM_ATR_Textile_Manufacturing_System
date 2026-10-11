@@ -1,11 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { Pool } from "pg";
+import { pool } from "@/lib/db/pool";
 import { verifyToken } from "@/lib/auth/auth";
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || "postgresql://postgres.xaqbisnaetgsjiortzgi:sohamsapkal@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres",
-});
 
 export async function POST(req: Request) {
   const client = await pool.connect();
@@ -21,11 +17,17 @@ export async function POST(req: Request) {
       permissions = ROLE_PERMISSIONS[payload.role]?.perms || [];
     }
     if (!payload || (!permissions.includes("production.assign") && !permissions.includes("production.record_output"))) {
-      return NextResponse.json({ success: false, error: "Forbidden: Requires production.assign or production.record_output permission" }, { status: 403 });
+      return NextResponse.json({ success: false, error: "Forbidden: Requires production.assign permission" }, { status: 403 });
     }
 
     const body = await req.json();
-    const { operationId, machineId, shift, date, operator, actor, autoSplit } = body;
+    const { operationId, machineId, shift, date, operator, actor, autoSplit, target: customTarget } = body;
+
+    if (!operationId) throw new Error("Operation ID is required");
+    if (!machineId) throw new Error("Machine is required");
+    if (!shift) throw new Error("Shift is required");
+    if (!date) throw new Error("Scheduled date is required");
+    if (!operator) throw new Error("Operator is required");
 
     await client.query('BEGIN');
 
@@ -33,67 +35,201 @@ export async function POST(req: Request) {
     const operation = opRes.rows[0];
     if (!operation) throw new Error("Operation not found");
 
-    // 1. Skill check
+    // 1. Enforce operator skills
     const profRes = await client.query("SELECT skill FROM users WHERE name LIKE $1 || '%'", [operator]);
     const operatorSkill = profRes.rows[0]?.skill;
-    if (!operatorSkill) throw new Error("Operator profile not found or not a machine operator");
+    if (!operatorSkill) throw new Error(`Operator profile '${operator}' not found`);
     if (operatorSkill !== "ALL" && operatorSkill !== operation.stage) {
-      throw new Error(`Operator skill '${operatorSkill}' is not qualified for stage '${operation.stage}'`);
+      throw new Error(`Operator skill '${operatorSkill}' is not qualified for stage '${operation.stage}'. Required: ${operation.stage} or ALL.`);
     }
 
-    // 2. Machine validation
+    // 2. Machine suitability & conflict validation
     const machRes = await client.query("SELECT * FROM machines WHERE code = $1 FOR UPDATE", [machineId]);
     const machine = machRes.rows[0];
-    if (!machine) throw new Error("Machine not found");
-    if (machine.stage !== operation.stage) throw new Error("Machine is not suitable for this stage");
+    if (!machine) throw new Error(`Machine '${machineId}' not found`);
+    if (machine.stage !== operation.stage) {
+      throw new Error(`Machine '${machineId}' (${machine.stage}) is not qualified for stage '${operation.stage}'`);
+    }
     
-    // Check conflicts
-    const conflictRes = await client.query("SELECT id FROM operations WHERE machine_code = $1 AND scheduled_date = $2 AND shift = $3 AND id != $4 AND status IN ('PLANNED', 'IN_PROGRESS', 'PAUSED')", [machineId, date, shift, operationId]);
-    if (conflictRes.rows.length > 0) throw new Error("Machine is already assigned to another task during this shift");
-
-    // 3. Upstream material availability check
-    if (operation.stage === 'WEAVING') {
-      const yarnRes = await client.query("SELECT COALESCE(SUM(available), 0) as total_avail FROM yarn_batches WHERE order_code = $1 AND section = 'SPUN_YARN' AND status = 'AVAILABLE'", [operation.order_code]);
-      const available = parseFloat(yarnRes.rows[0].total_avail);
-      if (parseFloat(operation.target) > available) throw new Error(`Insufficient spun yarn. Required: ${operation.target}, Available: ${available}`);
-    } else if (operation.stage === 'DYEING') {
-      const fabRes = await client.query("SELECT COALESCE(SUM(qty), 0) as total_avail FROM fabric_rolls WHERE order_code = $1 AND section = 'WOVEN_FABRIC'", [operation.order_code]);
-      const available = parseFloat(fabRes.rows[0].total_avail);
-      if (parseFloat(operation.target) > available) throw new Error(`Insufficient woven fabric. Required: ${operation.target}, Available: ${available}`);
+    // Check conflicts: machine cannot have overlapping active assignments for the same date & shift
+    const cleanShift = shift.includes("|") ? shift.split("|")[1].trim() : shift.trim();
+    const conflictRes = await client.query(
+      `SELECT id, code FROM operations 
+       WHERE machine_code = $1 
+         AND scheduled_date = $2 
+         AND (shift = $3 OR shift LIKE '% | ' || $3) 
+         AND id != $4 
+         AND status IN ('PLANNED', 'IN_PROGRESS', 'PAUSED')`, 
+      [machineId, date, cleanShift, operationId]
+    );
+    if (conflictRes.rows.length > 0) {
+      throw new Error(`Machine '${machineId}' is already booked for task ${conflictRes.rows[0].code} on ${date} (${cleanShift})`);
     }
 
-    // 4. Update the operation
-    let remainingTarget = 0;
-    let currentTarget = parseFloat(operation.target);
+    // Determine target quantity
+    const originalTarget = parseFloat(operation.target);
+    let targetToAssign = customTarget !== undefined && customTarget !== null ? parseFloat(customTarget) : originalTarget;
+    if (isNaN(targetToAssign) || targetToAssign <= 0) {
+      throw new Error("Target quantity must be a positive number");
+    }
 
-    if (autoSplit) {
-      const shiftMax = 400; // rough heuristic for 8hrs @ 50/hr
-      if (currentTarget > shiftMax) {
-        remainingTarget = currentTarget - shiftMax;
-        currentTarget = shiftMax;
+    // 3. Enforce material availability between stages
+    const unit = operation.unit || "KG";
+
+    if (operation.stage === 'SPINNING') {
+      // Must have raw yarn in warehouse
+      const rawRes = await client.query(
+        "SELECT COALESCE(SUM(on_hand), 0) as total_on_hand, COALESCE(SUM(available), 0) as total_avail FROM yarn_batches WHERE section = 'RAW_YARN' AND status = 'AVAILABLE'"
+      );
+      const totalRawOnHand = parseFloat(rawRes.rows[0].total_on_hand);
+      const totalRaw = parseFloat(rawRes.rows[0].total_avail);
+
+      const committedRes = await client.query(
+        `SELECT COALESCE(SUM(GREATEST(0, target - good)), 0) as committed 
+         FROM operations 
+         WHERE stage = 'SPINNING' AND id != $1 AND status IN ('PLANNED', 'IN_PROGRESS', 'PAUSED') AND machine_code IS NOT NULL`,
+        [operationId]
+      );
+      const committedRaw = parseFloat(committedRes.rows[0].committed);
+      const availableRaw = Math.max(0, totalRaw - committedRaw);
+
+      if (totalRawOnHand <= 0) {
+        throw new Error("Cannot assign spinning: no raw yarn is available in raw material warehouse.");
+      }
+      if (totalRaw <= 0 || availableRaw <= 0) {
+        throw new Error("Cannot assign spinning: all raw yarn in warehouse is already committed to active spinning tasks.");
+      }
+      if (targetToAssign > availableRaw) {
+        throw new Error(`Cannot assign spinning: requested target (${targetToAssign} ${unit}) exceeds available raw yarn in warehouse (${availableRaw} ${unit}).`);
+      }
+    } else if (operation.stage === 'WEAVING') {
+      // Must have spun yarn in spinning storage produced for this order
+      const spunRes = await client.query(
+        "SELECT COALESCE(SUM(on_hand), 0) as total_on_hand, COALESCE(SUM(available), 0) as total_avail FROM yarn_batches WHERE order_code = $1 AND section = 'SPUN_YARN' AND status = 'AVAILABLE'",
+        [operation.order_code]
+      );
+      const totalSpunOnHand = parseFloat(spunRes.rows[0].total_on_hand);
+      const totalSpun = parseFloat(spunRes.rows[0].total_avail);
+
+      const committedRes = await client.query(
+        `SELECT COALESCE(SUM(GREATEST(0, target - good)), 0) as committed 
+         FROM operations 
+         WHERE order_code = $1 AND stage = 'WEAVING' AND id != $2 AND status IN ('PLANNED', 'IN_PROGRESS', 'PAUSED') AND machine_code IS NOT NULL`,
+        [operation.order_code, operationId]
+      );
+      const committedSpun = parseFloat(committedRes.rows[0].committed);
+      const availableSpun = Math.max(0, totalSpun - committedSpun);
+
+      if (totalSpunOnHand <= 0) {
+        throw new Error(`Cannot assign weaving: no spun yarn is available in spinning storage for order ${operation.order_code}. Complete spinning first.`);
+      }
+      if (totalSpun <= 0 || availableSpun <= 0) {
+        throw new Error(`Cannot assign weaving: all spun yarn for order ${operation.order_code} is already committed to active weaving tasks.`);
+      }
+      if (targetToAssign > availableSpun) {
+        throw new Error(`Cannot assign weaving: requested target (${targetToAssign} ${unit}) exceeds available spun yarn in spinning storage (${availableSpun} ${unit}). Available for assignment: ${availableSpun} ${unit}.`);
+      }
+
+      // Atomically reserve the spun yarn across batches to prevent double allocation
+      let needed = targetToAssign;
+      const batches = await client.query(
+        "SELECT id, available FROM yarn_batches WHERE order_code = $1 AND section = 'SPUN_YARN' AND status = 'AVAILABLE' AND available > 0 FOR UPDATE",
+        [operation.order_code]
+      );
+      for (const b of batches.rows) {
+        if (needed <= 0) break;
+        const bAvail = parseFloat(b.available);
+        const toReserve = Math.min(bAvail, needed);
+        await client.query(
+          "UPDATE yarn_batches SET reserved = reserved + $1, available = available - $1 WHERE id = $2",
+          [toReserve, b.id]
+        );
+        needed -= toReserve;
+      }
+    } else if (operation.stage === 'DYEING') {
+      // Must have woven fabric in weaving storage produced for this order
+      const fabRes = await client.query(
+        "SELECT COALESCE(SUM(qty), 0) as total_rolls, COALESCE(SUM(CASE WHEN status NOT IN ('REJECTED', 'QUARANTINED', 'RESERVED') THEN qty ELSE 0 END), 0) as total_avail FROM fabric_rolls WHERE order_code = $1 AND section = 'WOVEN_FABRIC'",
+        [operation.order_code]
+      );
+      const totalWovenRolls = parseFloat(fabRes.rows[0].total_rolls);
+      const totalWoven = parseFloat(fabRes.rows[0].total_avail);
+
+      const committedRes = await client.query(
+        `SELECT COALESCE(SUM(GREATEST(0, target - good)), 0) as committed 
+         FROM operations 
+         WHERE order_code = $1 AND stage = 'DYEING' AND id != $2 AND status IN ('PLANNED', 'IN_PROGRESS', 'PAUSED') AND machine_code IS NOT NULL`,
+        [operation.order_code, operationId]
+      );
+      const committedWoven = parseFloat(committedRes.rows[0].committed);
+      const availableWoven = Math.max(0, totalWoven - committedWoven);
+
+      if (totalWovenRolls <= 0) {
+        throw new Error(`Cannot assign dyeing: no woven fabric is available in weaving storage for order ${operation.order_code}. Complete weaving first.`);
+      }
+      if (totalWoven <= 0 || availableWoven <= 0) {
+        throw new Error(`Cannot assign dyeing: all woven fabric for order ${operation.order_code} is already committed to active dyeing tasks.`);
+      }
+      if (targetToAssign > availableWoven) {
+        throw new Error(`Cannot assign dyeing: requested target (${targetToAssign} ${unit}) exceeds available woven fabric in weaving storage (${availableWoven} ${unit}). Available for assignment: ${availableWoven} ${unit}.`);
+      }
+
+      // Atomically reserve eligible woven rolls
+      let neededRollQty = targetToAssign;
+      const rolls = await client.query(
+        "SELECT id, qty FROM fabric_rolls WHERE order_code = $1 AND section = 'WOVEN_FABRIC' AND status NOT IN ('REJECTED', 'QUARANTINED', 'RESERVED') FOR UPDATE",
+        [operation.order_code]
+      );
+      for (const r of rolls.rows) {
+        if (neededRollQty <= 0) break;
+        const rQty = parseFloat(r.qty);
+        await client.query("UPDATE fabric_rolls SET status = 'RESERVED' WHERE id = $1", [r.id]);
+        neededRollQty -= rQty;
       }
     }
 
+    // 4. Partial production and auto-split handling
+    let unassignedRemaining = 0;
+    if (targetToAssign < originalTarget && !autoSplit) {
+      unassignedRemaining = originalTarget - targetToAssign;
+    }
+
+    let autoSplitRemaining = 0;
+    if (autoSplit) {
+      const shiftMax = 400; // 8 hours @ 50 units/hr
+      if (targetToAssign > shiftMax) {
+        autoSplitRemaining = targetToAssign - shiftMax;
+        targetToAssign = shiftMax;
+      }
+    }
+
+    // Update the operation
     await client.query(
-      "UPDATE operations SET machine_code = $1, shift = $2, scheduled_date = $3, operators = $4, target = $5 WHERE id = $6",
-      [machineId, shift, date, [operator], currentTarget, operationId]
+      "UPDATE operations SET machine_code = $1, shift = $2, scheduled_date = $3, operators = $4::jsonb, target = $5, status = 'PLANNED' WHERE id = $6",
+      [machineId, cleanShift, date, JSON.stringify([operator]), targetToAssign, operationId]
     );
 
+    // Update machine status to linked operation
     await client.query(
       "UPDATE machines SET operation_id = $1, order_code = $2 WHERE code = $3",
       [operationId, operation.order_code, machineId]
     );
 
-    // If auto split created remaining target, clone task
-    if (remainingTarget > 0) {
-       await client.query(
-         "INSERT INTO operations (id, code, order_code, plan_code, stage, status, target, unit) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-         [crypto.randomUUID(), `${operation.code}-SPLIT`, operation.order_code, operation.plan_code, operation.stage, 'PLANNED', remainingTarget, operation.unit]
-       );
+    // If partial target or auto-split left remaining quantity, create an unassigned planned task
+    const totalRemaining = unassignedRemaining + autoSplitRemaining;
+    if (totalRemaining > 0) {
+      await client.query(
+        "INSERT INTO operations (id, code, order_code, plan_code, stage, status, target, unit) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        [crypto.randomUUID(), `${operation.code}-REM`, operation.order_code, operation.plan_code, operation.stage, 'PLANNED', totalRemaining, operation.unit]
+      );
     }
 
     await client.query('COMMIT');
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ 
+      success: true, 
+      assignedTarget: targetToAssign,
+      remainingQuantity: totalRemaining
+    });
   } catch (error: any) {
     await client.query('ROLLBACK');
     console.error("Assign machine error:", error);

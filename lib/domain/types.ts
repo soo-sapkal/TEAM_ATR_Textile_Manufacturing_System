@@ -124,6 +124,7 @@ export interface FabricRoll {
   status: "AWAITING_INSPECTION" | "REINSPECTION_REQUIRED" | "REWORK_REQUIRED" | "REWORK_IN_PROGRESS" | "QUARANTINED" | "REJECTED" | "ACCEPTED" | "RESERVED" | "DISPATCHED";
   machineCode: string;
   location: string;
+  section?: string;
   createdAt: string;
   priorFailure: boolean;
   defect?: string;

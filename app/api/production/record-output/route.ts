@@ -1,12 +1,8 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { Pool } from "pg";
+import { pool } from "@/lib/db/pool";
 import { verifyToken } from "@/lib/auth/auth";
 import Decimal from "decimal.js";
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || "postgresql://postgres.xaqbisnaetgsjiortzgi:sohamsapkal@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres",
-});
 
 export async function POST(req: Request) {
   const client = await pool.connect();
@@ -120,15 +116,19 @@ export async function POST(req: Request) {
         );
       }
     } else if (operation.stage === "WEAVING") {
-      // Consume Spun Yarn from spinning storage
+      // Consume Spun Yarn from spinning storage (relieving reserved or available stock)
       const spunRes = await client.query(
-        "SELECT * FROM yarn_batches WHERE order_code = $1 AND section = 'SPUN_YARN' AND available >= $2 FOR UPDATE LIMIT 1",
+        "SELECT * FROM yarn_batches WHERE order_code = $1 AND section = 'SPUN_YARN' AND (available + reserved) >= $2 FOR UPDATE LIMIT 1",
         [operation.order_code, totalConsumed.toNumber()]
       );
       if (spunRes.rows.length > 0) {
+        const batch = spunRes.rows[0];
+        const consumed = totalConsumed.toNumber();
+        const reservedDeduct = Math.min(parseFloat(batch.reserved || 0), consumed);
+        const availDeduct = consumed - reservedDeduct;
         await client.query(
-          "UPDATE yarn_batches SET on_hand = on_hand - $1, available = available - $1 WHERE id = $2",
-          [totalConsumed.toNumber(), spunRes.rows[0].id]
+          "UPDATE yarn_batches SET on_hand = GREATEST(0, on_hand - $1), reserved = GREATEST(0, reserved - $2), available = GREATEST(0, available - $3) WHERE id = $4",
+          [consumed, reservedDeduct, availDeduct, batch.id]
         );
       }
 
@@ -152,16 +152,16 @@ export async function POST(req: Request) {
         );
       }
     } else if (operation.stage === "DYEING") {
-      // Consume Woven Fabric
+      // Consume Woven Fabric (relieving reserved roll or available woven fabric)
       const rollRes = await client.query(
-        "SELECT * FROM fabric_rolls WHERE order_code = $1 AND section = 'WOVEN_FABRIC' FOR UPDATE LIMIT 1",
+        "SELECT * FROM fabric_rolls WHERE order_code = $1 AND section = 'WOVEN_FABRIC' AND status IN ('RESERVED', 'AWAITING_INSPECTION') FOR UPDATE LIMIT 1",
         [operation.order_code]
       );
       if (rollRes.rows.length > 0) {
         const roll = rollRes.rows[0];
         // Move to dyed storage
         await client.query(
-          "UPDATE fabric_rolls SET section = 'DYED_FABRIC', status = 'AWAITING_INSPECTION', colour = (SELECT colour FROM orders WHERE code = $1) WHERE id = $2",
+          "UPDATE fabric_rolls SET section = 'DYED_FABRIC', status = 'AWAITING_INSPECTION', colour = COALESCE((SELECT colour FROM orders WHERE code = $1), 'Navy Blue') WHERE id = $2",
           [operation.order_code, roll.id]
         );
       } else if (parsedGood.gt(0)) {
