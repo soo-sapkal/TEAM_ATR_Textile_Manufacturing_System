@@ -87,7 +87,24 @@ function MachineBoard() {
 }
 
 function MachineDetail({ id }: { id: string }) {
-  const { data, act, user, toast } = useDemo();
+  const { data, act, user, toast, refreshData } = useDemo();
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (data.machines.length === 0) {
+      setLoading(true);
+      fetch("/api/production")
+        .then((r) => r.json())
+        .then((res) => {
+          if (res.success && res.data?.machines?.length) {
+            refreshData();
+          }
+        })
+        .catch(console.error)
+        .finally(() => setLoading(false));
+    }
+  }, [data.machines.length, refreshData]);
+
   const machine = data.machines.find((candidate) => candidate.id === id || candidate.code === id);
   const [reason, setReason] = useState("");
   const [showDowntime, setShowDowntime] = useState(false);
@@ -97,7 +114,17 @@ function MachineDetail({ id }: { id: string }) {
   const [busy, setBusy] = useState(false);
   const [transitionRevision, setTransitionRevision] = useState(1);
   const [downtimeRevision, setDowntimeRevision] = useState(1);
-  if (!machine) return <><PageHeader title="Machine not found"/><EmptyState title="No machine record" action={<LinkButton href="/machines">Machine board</LinkButton>}/></>;
+
+  if (loading && !machine) {
+    return <>
+      <PageHeader title="Loading machine details…" />
+      <div style={{ padding: "48px 24px", textAlign: "center", border: "2px dashed var(--color-border, #ccc)", borderRadius: 8, margin: "24px 0", background: "var(--card-bg, #fff)" }}>
+        <p className="cell-secondary">Fetching machine data from factory ledger…</p>
+      </div>
+    </>;
+  }
+
+  if (!machine) return <><PageHeader title="Machine not found"/><EmptyState title="No machine record" detail={`No machine matching ID "${id}" was found.`} action={<LinkButton href="/machines">Machine board</LinkButton>}/></>;
 
   const machineId = machine.id;
   const operation = data.operations.find((candidate) => candidate.id === machine.operationId);
