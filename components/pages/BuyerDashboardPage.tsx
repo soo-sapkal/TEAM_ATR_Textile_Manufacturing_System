@@ -98,6 +98,25 @@ export function BuyerDashboardPage() {
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [statementOpen, setStatementOpen] = useState(false);
   const [downloadSuccess, setDownloadSuccess] = useState<string | null>(null);
+  
+  // Real database catalog state
+  const [dbCatalog, setDbCatalog] = useState<any[]>([]);
+  const [loadingCatalog, setLoadingCatalog] = useState(false);
+
+  // Fetch real products from DB when catalog opens
+  const handleOpenCatalog = () => {
+    setCatalogOpen(true);
+    setLoadingCatalog(true);
+    fetch("/api/products")
+      .then((res) => res.json())
+      .then((resData) => {
+        if (resData.success) {
+          // Show all products in the catalog
+          setDbCatalog(resData.data);
+        }
+        setLoadingCatalog(false);
+      });
+  };
 
   // 1. Identify Buyer and filter strictly for their data
   const buyerId = user?.buyerId ?? "buyer-01";
@@ -274,7 +293,7 @@ Contact: finance@everestmills.demo | +91 80 2345 6789
             <button
               type="button"
               className="btn btn--secondary btn--md"
-              onClick={() => setCatalogOpen(true)}
+              onClick={handleOpenCatalog}
             >
               <Layers size={15} /> Fabric Catalog
             </button>

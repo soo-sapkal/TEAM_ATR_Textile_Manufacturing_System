@@ -105,7 +105,15 @@ export async function POST(req: Request) {
 
     const body = await req.json();
     const code = body.code || `ORD-${new Date().getFullYear()}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
-    const buyerId = (body.buyer || "buyer").toLowerCase().replace(/[^a-z0-9]/g, '-');
+    
+    // If the user is a BUYER, force their own identity. Otherwise, allow supervisor/owner to set it.
+    let buyerName = body.buyer || "Unknown Buyer";
+    let buyerId = (buyerName).toLowerCase().replace(/[^a-z0-9]/g, '-');
+    if (payload.role === "BUYER") {
+      buyerName = payload.name;
+      buyerId = payload.buyerId || payload.id;
+    }
+
     const orderQty = parseFloat(body.quantity || 0);
     const revenue = orderQty * 250;
 
@@ -164,7 +172,7 @@ export async function POST(req: Request) {
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
       RETURNING *
     `, [
-      code, body.buyer, buyerId, body.product, resolvedProductId, body.colour, body.due, body.priority || "NORMAL", body.unit || "M",
+      code, buyerName, buyerId, body.product, resolvedProductId, body.colour, body.due, body.priority || "NORMAL", body.unit || "M",
       orderQty, orderQty, "DRAFT", "DRAFT", "INR", revenue,
       hasShortage, isAtRisk
     ]);

@@ -1,2 +1,2 @@
-import { MasterDataRoute } from "@/components/pages/MasterDataPages";
-export default function Page() { return <MasterDataRoute path="/products" />; }
+import { BuyerCatalogPage } from "@/components/pages/BuyerCatalogPage";
+export default function Page() { return <BuyerCatalogPage />; }
