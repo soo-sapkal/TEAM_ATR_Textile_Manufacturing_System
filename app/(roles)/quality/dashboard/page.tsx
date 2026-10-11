@@ -1,2 +1,5 @@
-import { DashboardPage } from "@/components/pages/DashboardPage";
-export default function Page() { return <DashboardPage />; }
+import { QualityRoute } from "@/components/pages/QualityPages";
+
+export default function Page() {
+  return <QualityRoute path="/quality" />;
+}

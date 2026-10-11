@@ -21,10 +21,11 @@ export async function GET() {
   }
 
   try {
-    const [qualityInspectionsRes, reworkEventsRes, rollsRes] = await Promise.all([
+    const [qualityInspectionsRes, reworkEventsRes, rollsRes, machinesRes] = await Promise.all([
       pool.query("SELECT * FROM quality_inspections ORDER BY recorded_at DESC"),
       pool.query("SELECT * FROM rework_events ORDER BY recorded_at DESC"),
-      pool.query("SELECT * FROM fabric_rolls")
+      pool.query("SELECT * FROM fabric_rolls ORDER BY created_at DESC"),
+      pool.query("SELECT code, name, stage, location, status FROM machines")
     ]);
 
     return NextResponse.json({
@@ -32,7 +33,8 @@ export async function GET() {
       data: {
         inspectionEvents: snakeToCamel(qualityInspectionsRes.rows),
         reworkEvents: snakeToCamel(reworkEventsRes.rows),
-        rolls: snakeToCamel(rollsRes.rows)
+        rolls: snakeToCamel(rollsRes.rows),
+        machines: snakeToCamel(machinesRes.rows)
       }
     });
   } catch (error) {

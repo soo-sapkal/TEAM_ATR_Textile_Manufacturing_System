@@ -1,2 +1,5 @@
-import { OrdersPage } from "@/components/pages/OrdersPages";
-export default function Page() { return <OrdersPage />; }
+import { QualityRoute } from "@/components/pages/QualityPages";
+
+export default function Page() {
+  return <QualityRoute path="/quality/orders" />;
+}

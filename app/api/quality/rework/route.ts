@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { supabase } from "@/lib/supabase/client";
+import { pool } from "@/lib/db/pool";
 import { verifyToken } from "@/lib/auth/auth";
 
 export async function POST(req: Request) {
@@ -23,38 +23,44 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { rollId, action, reason, actor } = body;
 
-    const { data: roll, error: rollErr } = await supabase
-      .from("fabric_rolls")
-      .select("*")
-      .eq("id", rollId)
-      .single();
+    const rollRes = await pool.query(
+      "SELECT * FROM fabric_rolls WHERE id::text = $1 OR code = $1 LIMIT 1",
+      [rollId]
+    );
+    const roll = rollRes.rows[0];
 
-    if (rollErr || !roll) throw new Error("Roll not found");
+    if (!roll) {
+      return NextResponse.json({ success: false, error: "Roll not found" }, { status: 404 });
+    }
 
     let newStatus = roll.status;
     if (action === "start-rework") newStatus = "IN_REWORK";
     if (action === "complete-rework") newStatus = "REINSPECTION_REQUIRED";
 
-    // Update Roll status
-    const { error: updateErr } = await supabase
-      .from("fabric_rolls")
-      .update({ status: newStatus })
-      .eq("id", rollId);
+    await pool.query(
+      "UPDATE fabric_rolls SET status = $1, prior_failure = true WHERE id = $2",
+      [newStatus, roll.id]
+    );
 
-    if (updateErr) throw updateErr;
+    const reworkCode = `RWK-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    await pool.query(
+      `INSERT INTO rework_events 
+       (id, code, roll_id, roll_code, action, reason, actor, recorded_at) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
+      [
+        crypto.randomUUID(),
+        reworkCode,
+        roll.id,
+        roll.code,
+        action,
+        reason || "Rework operation recorded",
+        actor || payload.name || "Quality Inspector"
+      ]
+    );
 
-    // Insert rework event
-    await supabase.from("rework_events").insert({
-      id: crypto.randomUUID(),
-      roll_id: rollId,
-      action: action,
-      reason: reason,
-      actor: actor || "System",
-      recorded_at: new Date().toISOString()
-    });
-
-    return NextResponse.json({ success: true, status: newStatus });
+    return NextResponse.json({ success: true, status: newStatus, rollCode: roll.code });
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 400 });
+    console.error("Rework error:", error);
+    return NextResponse.json({ success: false, error: error.message || "Failed to process rework" }, { status: 500 });
   }
 }
