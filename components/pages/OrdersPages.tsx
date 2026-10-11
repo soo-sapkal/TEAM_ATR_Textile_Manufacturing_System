@@ -29,9 +29,28 @@ function getOrderPath(id: string, user: any) {
 
 export function OrdersPage() {
   const { data, user } = useDemo();
+  const isBuyer = Boolean(user?.roles?.includes("BUYER"));
+  const buyerId = user?.buyerId ?? "buyer-01";
+  const buyerCompanyName = user?.name
+    ? user.name.replace(/\s*\([^)]*\)$/, "").trim().toLowerCase()
+    : "anita";
+
   const [filter, setFilter] = useState("ALL");
   const [search, setSearch] = useState("");
-  const orders = useMemo(() => data.orders.filter((order) => {
+
+  const baseOrders = useMemo(() => {
+    if (!isBuyer) return data.orders;
+    return data.orders.filter(
+      (order) =>
+        order.buyerId === buyerId ||
+        (user?.buyerId && order.buyerId === user.buyerId) ||
+        order.buyer.toLowerCase().includes("mysore") ||
+        order.buyer.toLowerCase().includes("anita") ||
+        (buyerCompanyName && order.buyer.toLowerCase().includes(buyerCompanyName))
+    );
+  }, [data.orders, isBuyer, buyerId, buyerCompanyName, user?.buyerId]);
+
+  const orders = useMemo(() => baseOrders.filter((order) => {
     const needle = search.toLowerCase();
     const matches = !needle || `${order.code} ${order.buyer} ${order.product}`.toLowerCase().includes(needle);
     const stateMatches = filter === "ALL" 
@@ -40,24 +59,68 @@ export function OrdersPage() {
       : filter === "AT_RISK" ? order.atRisk 
       : order.displayStatus === filter);
     return matches && stateMatches;
-  }), [data.orders, search, filter]);
+  }), [baseOrders, search, filter]);
 
   const openByUnit = [...new Set(data.orders.map((order) => order.unit))].map((unit) => formatQty(data.orders.filter((order) => order.unit === unit).reduce((sum, order) => sum.plus(order.remaining), new Decimal(0)).toFixed(3), unit, 0));
   const shortageCount = data.orders.filter((order) => order.materialShortage).length;
   const readyCount = data.orders.length - shortageCount;
 
   return <>
-    <PageHeader eyebrow="Make & move · customer commitment" title="Orders" description="Order quantities stay in their own unit. Live BOM material checks indicate whether enough yarn is in stock to start each order or if yarn must be ordered first." actions={<Can perm="orders.create"><LinkButton href={`${user?.roles?.includes("BUYER") ? "/buyer" : ""}/orders/new`} variant="primary"><FilePlus2 size={15}/> Create order</LinkButton></Can>} />
+    {isBuyer ? (
+      <PageHeader 
+        eyebrow="My purchase orders · fulfilment tracking" 
+        title="Track Orders" 
+        description="View real-time progress of your fabric orders across manufacturing, quality clearance, and outbound dispatch." 
+        actions={<Can perm="orders.create"><LinkButton href="/buyer/orders/new" variant="primary"><Plus size={15}/> Place new order</LinkButton></Can>} 
+      />
+    ) : (
+      <PageHeader 
+        eyebrow="Make & move · customer commitment" 
+        title="Orders" 
+        description="Order quantities stay in their own unit. Live BOM material checks indicate whether enough yarn is in stock to start each order or if yarn must be ordered first." 
+        actions={<Can perm="orders.create"><LinkButton href={`${user?.roles?.includes("BUYER") ? "/buyer" : ""}/orders/new`} variant="primary"><FilePlus2 size={15}/> Create order</LinkButton></Can>} 
+      />
+    )}
     
     <div className="stat-grid">
-      <div className="stat-card stat-card--indigo"><div className="stat-card__top">Active orders</div><strong>{data.orders.length}</strong><div className="stat-card__bottom">total customer orders</div></div>
-      <div className="stat-card stat-card--neem"><div className="stat-card__top">Ready to start</div><strong>{readyCount}</strong><div className="stat-card__bottom">sufficient yarn in stock</div></div>
-      <div className="stat-card stat-card--madder"><div className="stat-card__top">Yarn shortage</div><strong>{shortageCount}</strong><div className="stat-card__bottom">must order yarn first</div></div>
-      <div className="stat-card stat-card--cotton"><div className="stat-card__top">Open balance</div><strong>{openByUnit.join(" · ")}</strong><div className="stat-card__bottom">each unit totals separately</div></div>
+      {isBuyer ? (
+        <>
+          <div className="stat-card stat-card--indigo">
+            <div className="stat-card__top">My active orders</div>
+            <strong>{baseOrders.length}</strong>
+            <div className="stat-card__bottom">total purchase orders</div>
+          </div>
+          <div className="stat-card stat-card--turmeric">
+            <div className="stat-card__top">In production</div>
+            <strong>{baseOrders.filter(o => o.displayStatus === "IN_PRODUCTION" || ["SPINNING", "WEAVING", "DYEING"].includes(o.stage || "")).length}</strong>
+            <div className="stat-card__bottom">on loom & manufacturing</div>
+          </div>
+          <div className="stat-card stat-card--neem">
+            <div className="stat-card__top">Ready for dispatch</div>
+            <strong>{baseOrders.filter(o => o.displayStatus === "READY_FOR_DISPATCH").length}</strong>
+            <div className="stat-card__bottom">QC inspected & cleared</div>
+          </div>
+          <div className="stat-card stat-card--cotton">
+            <div className="stat-card__top">Dispatched</div>
+            <strong>{baseOrders.filter(o => o.displayStatus === "DISPATCHED" || (o.dispatched && new Decimal(o.dispatched).gt(0))).length}</strong>
+            <div className="stat-card__bottom">shipped / in transit</div>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="stat-card stat-card--indigo"><div className="stat-card__top">Active orders</div><strong>{data.orders.length}</strong><div className="stat-card__bottom">total customer orders</div></div>
+          <div className="stat-card stat-card--neem"><div className="stat-card__top">Ready to start</div><strong>{readyCount}</strong><div className="stat-card__bottom">sufficient yarn in stock</div></div>
+          <div className="stat-card stat-card--madder"><div className="stat-card__top">Yarn shortage</div><strong>{shortageCount}</strong><div className="stat-card__bottom">must order yarn first</div></div>
+          <div className="stat-card stat-card--cotton"><div className="stat-card__top">Open balance</div><strong>{openByUnit.join(" · ")}</strong><div className="stat-card__bottom">each unit totals separately</div></div>
+        </>
+      )}
     </div>
 
     <div className="filter-row" role="group" aria-label="Filter orders">
-      {["ALL", "SHORTAGE", "MATERIAL_READY", "AT_RISK", "CONFIRMED", "IN_PRODUCTION", "READY_FOR_DISPATCH"].map((item) => (
+      {(isBuyer 
+        ? ["ALL", "CONFIRMED", "IN_PRODUCTION", "READY_FOR_DISPATCH", "DISPATCHED"] 
+        : ["ALL", "SHORTAGE", "MATERIAL_READY", "AT_RISK", "CONFIRMED", "IN_PRODUCTION", "READY_FOR_DISPATCH"]
+      ).map((item) => (
         <button key={item} className={`filter-chip${filter === item ? " filter-chip--active" : ""}`} onClick={() => setFilter(item)}>
           {item === "SHORTAGE" ? "⚠️ Yarn Shortage" : item === "MATERIAL_READY" ? "✅ Yarn Ready" : item.replaceAll("_", " ")}
         </button>
@@ -67,50 +130,84 @@ export function OrdersPage() {
       </label>
     </div>
 
-    <Card className="card--table" title="Order book" action={<Tag>{orders.length} shown</Tag>}>
-      <DataTable headers={["Order / buyer", "Product", "Due", "Priority", "Yarn Readiness", "Production", "Accepted", "State", ""]} rows={orders.map((order) => [
-        <div>
-          <Link href={getOrderPath(order.id, user)} className="cell-primary code">{order.code}</Link>
-          <span className="cell-secondary">{order.buyer}</span>
-        </div>, 
-        <div>
-          <span className="cell-primary">{order.product}</span>
-          <span className="cell-secondary">{order.colour}</span>
-        </div>, 
-        <div>
-          <span className="cell-primary">{formatDate(order.due)}</span>
-          {order.atRisk && <span className="cell-secondary" style={{ color: "var(--madder)" }}>At risk</span>}
-        </div>, 
-        <StatusBadge status={order.priority}/>,
-        <div>
-          {order.materialShortage ? (
-            <div>
-              <StatusBadge status="HIGH" label="Shortage · Order Yarn"/>
-              <span className="cell-secondary" style={{ color: "var(--madder)", fontWeight: 700, display: "block", fontSize: 11, marginTop: 2 }}>
-                {order.materialReadiness?.deficitSummary?.replace("Shortage: ", "") || "Short yarn stock"}
-              </span>
-            </div>
-          ) : (
-            <div>
-              <StatusBadge status="AVAILABLE" label="Sufficient Yarn"/>
-              <span className="cell-secondary" style={{ color: "var(--neem)", display: "block", fontSize: 11, marginTop: 2 }}>
-                Ready to start
-              </span>
-            </div>
-          )}
-        </div>,
-        <div style={{ minWidth: 112 }}>
-          <Meter value={order.produced} total={order.ordered} label="Produced" showNumbers={false}/>
-          <span className="cell-secondary num">{formatQty(order.produced, order.unit, 0)} / {formatQty(order.ordered, order.unit, 0)}</span>
-        </div>, 
-        formatQty(order.accepted, order.unit, 0), 
-        <StatusBadge status={order.displayStatus}/>, 
-        <Link href={getOrderPath(order.id, user)} className="btn btn--secondary btn--sm">
-          Open <ArrowRight size={12}/>
-        </Link>
-      ])} empty={<EmptyState title="No matching order" detail="Change filters or search for another order."/>}/>
+    <Card className="card--table" title={isBuyer ? "Purchase orders" : "Order book"} action={<Tag>{orders.length} shown</Tag>}>
+      <DataTable 
+        headers={isBuyer 
+          ? ["Order", "Product / Shade", "Delivery Due", "Priority", "Quantity", "Production Progress", "Status", ""]
+          : ["Order / buyer", "Product", "Due", "Priority", "Yarn Readiness", "Production", "Accepted", "State", ""]
+        } 
+        rows={orders.map((order) => isBuyer ? [
+          <div>
+            <Link href={getOrderPath(order.id, user)} className="cell-primary code">{order.code}</Link>
+          </div>,
+          <div>
+            <span className="cell-primary">{order.product}</span>
+            <span className="cell-secondary">{order.colour}</span>
+          </div>,
+          <div>
+            <span className="cell-primary">{formatDate(order.due)}</span>
+          </div>,
+          <StatusBadge status={order.priority}/>,
+          <span className="num" style={{ fontWeight: 700 }}>{formatQty(order.ordered, order.unit, 0)}</span>,
+          <div style={{ minWidth: 112 }}>
+            <Meter value={order.produced} total={order.ordered} label="Produced" showNumbers={false}/>
+            <span className="cell-secondary num">{formatQty(order.produced, order.unit, 0)} / {formatQty(order.ordered, order.unit, 0)}</span>
+          </div>,
+          <StatusBadge status={order.displayStatus}/>,
+          <Link href={getOrderPath(order.id, user)} className="btn btn--secondary btn--sm">
+            Track <ArrowRight size={12}/>
+          </Link>
+        ] : [
+          <div>
+            <Link href={getOrderPath(order.id, user)} className="cell-primary code">{order.code}</Link>
+            <span className="cell-secondary">{order.buyer}</span>
+          </div>, 
+          <div>
+            <span className="cell-primary">{order.product}</span>
+            <span className="cell-secondary">{order.colour}</span>
+          </div>, 
+          <div>
+            <span className="cell-primary">{formatDate(order.due)}</span>
+            {order.atRisk && <span className="cell-secondary" style={{ color: "var(--madder)" }}>At risk</span>}
+          </div>, 
+          <StatusBadge status={order.priority}/>,
+          <div>
+            {order.materialShortage ? (
+              <div>
+                <StatusBadge status="HIGH" label="Shortage · Order Yarn"/>
+                <span className="cell-secondary" style={{ color: "var(--madder)", fontWeight: 700, display: "block", fontSize: 11, marginTop: 2 }}>
+                  {order.materialReadiness?.deficitSummary?.replace("Shortage: ", "") || "Short yarn stock"}
+                </span>
+              </div>
+            ) : (
+              <div>
+                <StatusBadge status="AVAILABLE" label="Sufficient Yarn"/>
+                <span className="cell-secondary" style={{ color: "var(--neem)", display: "block", fontSize: 11, marginTop: 2 }}>
+                  Ready to start
+                </span>
+              </div>
+            )}
+          </div>,
+          <div style={{ minWidth: 112 }}>
+            <Meter value={order.produced} total={order.ordered} label="Produced" showNumbers={false}/>
+            <span className="cell-secondary num">{formatQty(order.produced, order.unit, 0)} / {formatQty(order.ordered, order.unit, 0)}</span>
+          </div>, 
+          formatQty(order.accepted, order.unit, 0), 
+          <StatusBadge status={order.displayStatus}/>, 
+          <Link href={getOrderPath(order.id, user)} className="btn btn--secondary btn--sm">
+            Open <ArrowRight size={12}/>
+          </Link>
+        ])} 
+        empty={<EmptyState title="No matching order" detail={isBuyer ? "You have no purchase orders matching this search or filter." : "Change filters or search for another order."}/>}
+      />
     </Card>
-    <InfoStrip tone="info" title="Raw material readiness logic">Before a manufacturing plan can be released to machines, yarn availability is checked in KG against product BOMs. Shortages trigger alerts to purchase yarn first.</InfoStrip>
+    {isBuyer ? (
+      <InfoStrip tone="info" title="Order Tracking & Quality Gates">
+        Orders progress through verified factory milestones: Yarn Preparation &rarr; Loom Weaving &rarr; Dyeing & Finishing &rarr; 4-Point Quality Inspection &rarr; Dispatch. For changes or inquiries, contact your mill representative.
+      </InfoStrip>
+    ) : (
+      <InfoStrip tone="info" title="Raw material readiness logic">Before a manufacturing plan can be released to machines, yarn availability is checked in KG against product BOMs. Shortages trigger alerts to purchase yarn first.</InfoStrip>
+    )}
   </>;
 }
 
@@ -298,117 +395,185 @@ export function OrderDetailPage({ id }: { id: string }) {
     }
   }
 
+  const isBuyer = Boolean(user?.roles?.includes("BUYER"));
+
   return <>
-    <PageHeader eyebrow="Order command page" title={order.code} description={`${order.buyer} · ${order.product} · ${order.colour}`} actions={<><LinkButton href={getOrdersPath(user)} variant="secondary"><ArrowLeft size={14}/> Orders</LinkButton><Can perm="finance.read"><LinkButton href="/finance" variant="secondary"><CircleDollarSign size={14}/> Cost view</LinkButton></Can></>} meta={<><StatusBadge status={order.displayStatus}/><StatusBadge status={order.priority}/><Tag>Due {formatDate(order.due)}</Tag>{order.materialShortage ? <StatusBadge status="HIGH" label="Yarn Shortage"/> : <StatusBadge status="AVAILABLE" label="Yarn Ready"/>}</>} />
+    <PageHeader 
+      eyebrow={isBuyer ? "Buyer account · purchase order" : "Order command page"} 
+      title={order.code} 
+      description={isBuyer ? `${order.product} · ${order.colour} · ${formatQty(order.ordered, order.unit, 0)}` : `${order.buyer} · ${order.product} · ${order.colour}`} 
+      actions={isBuyer ? (
+        <LinkButton href={getOrdersPath(user)} variant="secondary"><ArrowLeft size={14}/> Back to orders</LinkButton>
+      ) : (
+        <><LinkButton href={getOrdersPath(user)} variant="secondary"><ArrowLeft size={14}/> Orders</LinkButton><Can perm="finance.read"><LinkButton href="/finance" variant="secondary"><CircleDollarSign size={14}/> Cost view</LinkButton></Can></>
+      )} 
+      meta={isBuyer ? (
+        <><StatusBadge status={order.displayStatus}/><StatusBadge status={order.priority}/><Tag>Due {formatDate(order.due)}</Tag></>
+      ) : (
+        <><StatusBadge status={order.displayStatus}/><StatusBadge status={order.priority}/><Tag>Due {formatDate(order.due)}</Tag>{order.materialShortage ? <StatusBadge status="HIGH" label="Yarn Shortage"/> : <StatusBadge status="AVAILABLE" label="Yarn Ready"/>}</>
+      )} 
+    />
     
-    {order.materialShortage ? (
-      <div style={{ marginBottom: 16 }}>
-        <InfoStrip tone="danger" title="🚨 Cannot Start Production — Raw Material Shortage Alert">
-          This order requires more raw material than is currently available in the yarn warehouse! A yarn purchase order must be placed and received before this order can be released to machines. <strong>{order.materialReadiness?.deficitSummary}</strong>.
-          <div style={{ marginTop: 8 }}>
-            {hasPermission(user, "inventory.receive") && (
-              <LinkButton href="/inventory/receive" variant="primary" size="sm">
-                Go to Yarn Receipt / Purchase Form →
-              </LinkButton>
-            )}
-          </div>
-        </InfoStrip>
-      </div>
-    ) : (
-      <div style={{ marginBottom: 16 }}>
-        <InfoStrip tone="success" title="✅ Raw Material Verified — Ready to Start">
-          Sufficient yarn raw material is in stock to fulfill this order's BOM requirements. The production plan can be released to factory floor machinery without raw material delays.
-        </InfoStrip>
-      </div>
+    {!isBuyer && (
+      order.materialShortage ? (
+        <div style={{ marginBottom: 16 }}>
+          <InfoStrip tone="danger" title="🚨 Cannot Start Production — Raw Material Shortage Alert">
+            This order requires more raw material than is currently available in the yarn warehouse! A yarn purchase order must be placed and received before this order can be released to machines. <strong>{order.materialReadiness?.deficitSummary}</strong>.
+            <div style={{ marginTop: 8 }}>
+              {hasPermission(user, "inventory.receive") && (
+                <LinkButton href="/inventory/receive" variant="primary" size="sm">
+                  Go to Yarn Receipt / Purchase Form →
+                </LinkButton>
+              )}
+            </div>
+          </InfoStrip>
+        </div>
+      ) : (
+        <div style={{ marginBottom: 16 }}>
+          <InfoStrip tone="success" title="✅ Raw Material Verified — Ready to Start">
+            Sufficient yarn raw material is in stock to fulfill this order's BOM requirements. The production plan can be released to factory floor machinery without raw material delays.
+          </InfoStrip>
+        </div>
+      )
     )}
 
     <div className="stat-grid">
-      <StatCard label="Ordered" value={formatQty(order.ordered, order.unit, 0)} detail="Buyer commitment" icon={ClipboardList}/>
-      <StatCard label="Raw material check" value={order.materialShortage ? "Shortage" : "Sufficient"} detail={order.materialShortage ? "Purchase yarn first" : "100% yarn available"} icon={AlertTriangle} tone={order.materialShortage ? "madder" : "neem"}/>
+      <StatCard label="Ordered" value={formatQty(order.ordered, order.unit, 0)} detail={isBuyer ? "Purchase quantity" : "Buyer commitment"} icon={ClipboardList}/>
+      {isBuyer ? (
+        <StatCard label="Quality passed" value={formatQty(order.accepted, order.unit, 0)} detail="QC accepted rolls" icon={PackageCheck} tone="neem"/>
+      ) : (
+        <StatCard label="Raw material check" value={order.materialShortage ? "Shortage" : "Sufficient"} detail={order.materialShortage ? "Purchase yarn first" : "100% yarn available"} icon={AlertTriangle} tone={order.materialShortage ? "madder" : "neem"}/>
+      )}
       <StatCard label="Produced" value={formatQty(order.produced, order.unit, 0)} detail={`${percent}% of requested quantity`} icon={Activity}/>
-      <StatCard label="Available for dispatch" value={formatQty(order.available, order.unit, 0)} detail={`${order.reserved} reserved · ${order.dispatched} dispatched`} icon={Truck} tone={order.hasQualityHold ? "turmeric" : "cotton"}/>
+      <StatCard label={isBuyer ? "Dispatched" : "Available for dispatch"} value={formatQty(isBuyer ? order.dispatched : order.available, order.unit, 0)} detail={isBuyer ? `${order.remaining} remaining` : `${order.reserved} reserved · ${order.dispatched} dispatched`} icon={Truck} tone={order.hasQualityHold ? "turmeric" : "cotton"}/>
     </div>
 
     <div className="page-grid">
-      <Card className="col-12" title="Raw Material & BOM Feasibility Breakdown" action={
-        order.materialShortage ? <StatusBadge status="HIGH" label="Needs Yarn Order"/> : <StatusBadge status="AVAILABLE" label="Ready to Start"/>
-      }>
-        {order.materialReadiness?.details && order.materialReadiness.details.length > 0 ? (
-          <div>
-            <p className="cell-secondary" style={{ marginBottom: 12 }}>
-              Based on the product BOM for <strong>{order.product}</strong>, manufacturing {formatQty(order.ordered, order.unit, 0)} requires the following raw materials:
-            </p>
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
-                <thead>
-                  <tr style={{ textAlign: "left", borderBottom: "2px solid #e0dbce" }}>
-                    <th style={{ padding: "8px 8px" }}>Yarn Material</th>
-                    <th style={{ padding: "8px 8px" }}>Order Requirement</th>
-                    <th style={{ padding: "8px 8px" }}>Available in Mill</th>
-                    <th style={{ padding: "8px 8px" }}>Stock Balance</th>
-                    <th style={{ padding: "8px 8px" }}>Feasibility Status</th>
-                    <th style={{ padding: "8px 8px" }}>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {order.materialReadiness.details.map((item) => {
-                    const surplus = item.availableQty - item.requiredQty;
-                    return (
-                      <tr key={item.yarnCode} style={{ borderBottom: "1px solid #ebe6d9" }}>
-                        <td style={{ padding: "10px 8px" }}>
-                          <strong className="code">{item.yarnCode}</strong>
-                          <div className="cell-secondary">{item.yarnName}</div>
-                        </td>
-                        <td style={{ padding: "10px 8px", fontWeight: 700 }}>
-                          {formatQty(item.requiredQty.toFixed(1), item.unit as any, 1)}
-                        </td>
-                        <td style={{ padding: "10px 8px" }}>
-                          {formatQty(item.availableQty.toFixed(1), item.unit as any, 1)}
-                        </td>
-                        <td style={{ padding: "10px 8px", fontWeight: 700, color: item.isShort ? "var(--madder)" : "var(--neem)" }}>
-                          {item.isShort ? `Deficit: -${item.deficitQty.toFixed(1)} ${item.unit}` : `Surplus: +${surplus.toFixed(1)} ${item.unit}`}
-                        </td>
-                        <td style={{ padding: "10px 8px" }}>
-                          {item.isShort ? (
-                            <StatusBadge status="HIGH" label="Short — Order First"/>
-                          ) : (
-                            <StatusBadge status="AVAILABLE" label="In Stock — Ready"/>
-                          )}
-                        </td>
-                        <td style={{ padding: "10px 8px" }}>
-                          {item.isShort && hasPermission(user, "inventory.receive") ? (
-                            <LinkButton href={`/inventory/receive?item=${item.yarnCode}&needed=${item.deficitQty.toFixed(1)}`} variant="primary" size="sm">
-                              Reorder {item.deficitQty.toFixed(1)} {item.unit}
-                            </LinkButton>
-                          ) : (
-                            <span className="cell-secondary">—</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+      {!isBuyer && (
+        <Card className="col-12" title="Raw Material & BOM Feasibility Breakdown" action={
+          order.materialShortage ? <StatusBadge status="HIGH" label="Needs Yarn Order"/> : <StatusBadge status="AVAILABLE" label="Ready to Start"/>
+        }>
+          {order.materialReadiness?.details && order.materialReadiness.details.length > 0 ? (
+            <div>
+              <p className="cell-secondary" style={{ marginBottom: 12 }}>
+                Based on the product BOM for <strong>{order.product}</strong>, manufacturing {formatQty(order.ordered, order.unit, 0)} requires the following raw materials:
+              </p>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr style={{ textAlign: "left", borderBottom: "2px solid #e0dbce" }}>
+                      <th style={{ padding: "8px 8px" }}>Yarn Material</th>
+                      <th style={{ padding: "8px 8px" }}>Order Requirement</th>
+                      <th style={{ padding: "8px 8px" }}>Available in Mill</th>
+                      <th style={{ padding: "8px 8px" }}>Stock Balance</th>
+                      <th style={{ padding: "8px 8px" }}>Feasibility Status</th>
+                      <th style={{ padding: "8px 8px" }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {order.materialReadiness.details.map((item) => {
+                      const surplus = item.availableQty - item.requiredQty;
+                      return (
+                        <tr key={item.yarnCode} style={{ borderBottom: "1px solid #ebe6d9" }}>
+                          <td style={{ padding: "10px 8px" }}>
+                            <strong className="code">{item.yarnCode}</strong>
+                            <div className="cell-secondary">{item.yarnName}</div>
+                          </td>
+                          <td style={{ padding: "10px 8px", fontWeight: 700 }}>
+                            {formatQty(item.requiredQty.toFixed(1), item.unit as any, 1)}
+                          </td>
+                          <td style={{ padding: "10px 8px" }}>
+                            {formatQty(item.availableQty.toFixed(1), item.unit as any, 1)}
+                          </td>
+                          <td style={{ padding: "10px 8px", fontWeight: 700, color: item.isShort ? "var(--madder)" : "var(--neem)" }}>
+                            {item.isShort ? `Deficit: -${item.deficitQty.toFixed(1)} ${item.unit}` : `Surplus: +${surplus.toFixed(1)} ${item.unit}`}
+                          </td>
+                          <td style={{ padding: "10px 8px" }}>
+                            {item.isShort ? (
+                              <StatusBadge status="HIGH" label="Short — Order First"/>
+                            ) : (
+                              <StatusBadge status="AVAILABLE" label="In Stock — Ready"/>
+                            )}
+                          </td>
+                          <td style={{ padding: "10px 8px" }}>
+                            {item.isShort && hasPermission(user, "inventory.receive") ? (
+                              <LinkButton href={`/inventory/receive?item=${item.yarnCode}&needed=${item.deficitQty.toFixed(1)}`} variant="primary" size="sm">
+                                Reorder {item.deficitQty.toFixed(1)} {item.unit}
+                              </LinkButton>
+                            ) : (
+                              <span className="cell-secondary">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <div className="permission-note">
+              Standard fabric recipe without specific individual BOM lines.
+            </div>
+          )}
+        </Card>
+      )}
+
+      <Card className="col-8" title={isBuyer ? "Fulfilment & Manufacturing Thread" : "Thread through production"}>
+        <Meter value={order.produced} total={order.ordered} label="Produced vs order quantity"/>
+        <div style={{ marginTop: 20 }}><ThreadForOrder order={order}/></div>
+        <div className="page-grid" style={{ marginTop: 20 }}>
+          <div className="col-4">
+            <Kicker>{isBuyer ? "Total Ordered" : "Plan"}</Kicker>
+            <div className="num" style={{ fontSize: 18, marginTop: 5 }}>{formatQty(isBuyer ? order.ordered : order.planned, order.unit, 0)}</div>
+          </div>
+          <div className="col-4">
+            <Kicker>Remaining to Ship</Kicker>
+            <div className="num" style={{ fontSize: 18, marginTop: 5 }}>{formatQty(order.remaining, order.unit, 0)}</div>
+          </div>
+          <div className="col-4">
+            <Kicker>{isBuyer ? "Quality Clearance" : "Quality hold"}</Kicker>
+            <div style={{ marginTop: 6 }}>
+              <StatusBadge status={order.hasQualityHold ? "QUARANTINED" : "ACCEPTED"} label={order.hasQualityHold ? "Under Review" : "Clear & Approved"}/>
             </div>
           </div>
-        ) : (
-          <div className="permission-note">
-            Standard fabric recipe without specific individual BOM lines.
+        </div>
+      </Card>
+      
+      <Card className="col-4" title={isBuyer ? "Milestone History" : "Buyer and production milestones"}>
+        <div className="stack-sm">{[
+          ["Order raised", "2026-10-04T09:00:00Z", "done"], 
+          ["Approved", "2026-10-04T11:20:00Z", "done"], 
+          ["Material allocated", isBuyer ? "Raw material staged" : (order.materialShortage ? "Shortage · order needed" : "Reservation recorded"), order.materialShortage && !isBuyer ? "blocked" : "done"], 
+          ["Production", order.stage ? `${order.stage.toLowerCase()} · in progress` : "Awaiting schedule", order.stage ? "current" : "todo"], 
+          ["Quality clearance", order.hasQualityHold ? "Hold · disposition needed" : `${order.accepted} ${order.unit} accepted`, order.hasQualityHold ? "blocked" : "todo"], 
+          ["Dispatch", `${order.dispatched} ${order.unit} dispatched`, order.dispatched && new Decimal(order.dispatched).gt(0) ? "done" : "todo"],
+        ].map(([label, detail, status]) => (
+          <div key={label} style={{ display: "grid", gridTemplateColumns: "120px 1fr auto", alignItems: "center", gap: 8, padding: "8px 0", borderBottom: "1px solid #d4cfbd" }}>
+            <span className="cell-primary" style={{ fontSize: 12 }}>{label}</span>
+            <span className="cell-secondary" style={{ fontSize: 11 }}>{detail}</span>
+            <StatusBadge status={status === "done" ? "COMPLETED" : status === "current" ? "IN_PROGRESS" : status === "blocked" ? "QUARANTINED" : "PLANNED"} label={status}/>
           </div>
-        )}
+        ))}</div>
       </Card>
 
-      <Card className="col-8" title="Thread through production"><Meter value={order.produced} total={order.ordered} label="Produced vs order quantity"/><div style={{ marginTop: 20 }}><ThreadForOrder order={order}/></div><div className="page-grid" style={{ marginTop: 20 }}><div className="col-4"><Kicker>Plan</Kicker><div className="num" style={{ fontSize: 18, marginTop: 5 }}>{formatQty(order.planned, order.unit, 0)}</div></div><div className="col-4"><Kicker>Remaining</Kicker><div className="num" style={{ fontSize: 18, marginTop: 5 }}>{formatQty(order.remaining, order.unit, 0)}</div></div><div className="col-4"><Kicker>Quality hold</Kicker><div style={{ marginTop: 6 }}><StatusBadge status={order.hasQualityHold ? "QUARANTINED" : "ACCEPTED"} label={order.hasQualityHold ? "Review required" : "Clear"}/></div></div></div></Card>
-      
-      <Card className="col-4" title="Buyer and production milestones"><div className="stack-sm">{[
-        ["Order raised", "2026-10-04T09:00:00Z", "done"], ["Approved", "2026-10-04T11:20:00Z", "done"], ["Material reserved", order.materialShortage ? "Shortage · order needed" : "Reservation recorded", order.materialShortage ? "blocked" : "done"], ["Production", order.stage ? `${order.stage.toLowerCase()} · in progress` : "Awaiting plan", order.stage ? "current" : "todo"], ["Quality", order.hasQualityHold ? "Hold · disposition needed" : `${order.accepted} ${order.unit} accepted`, order.hasQualityHold ? "blocked" : "todo"], ["Dispatch", `${order.dispatched} ${order.unit} dispatched`, "todo"],
-      ].map(([label, detail, status]) => <div key={label} style={{ display: "grid", gridTemplateColumns: "110px 1fr auto", alignItems: "center", gap: 8, padding: "8px 0", borderBottom: "1px solid #d4cfbd" }}><span className="cell-primary" style={{ fontSize: 12 }}>{label}</span><span className="cell-secondary" style={{ fontSize: 11 }}>{detail}</span><StatusBadge status={status === "done" ? "COMPLETED" : status === "current" ? "IN_PROGRESS" : status === "blocked" ? "QUARANTINED" : "PLANNED"} label={status}/></div>)}</div></Card>
+      {!isBuyer && (
+        <>
+          <Can perm="finance.read" fallback={<Card className="col-6" title="Cost visibility"><InfoStrip tone="info">Cost amounts and allocation details are restricted to finance.read. Ask Finance for the approved view.</InfoStrip></Card>}><Card className="col-6" title="Cost visibility"><div className="page-grid"><div className="col-6"><Kicker>Recorded actual/allocated</Kicker><strong style={{ display: "block", font: "900 23px var(--font-display)", marginTop: 8 }}>{formatMoney(order.recordedCost, order.currency)}</strong><span className="cell-secondary">Includes posted direct cost and assigned overhead.</span></div><div className="col-6"><Kicker>Estimate / pending</Kicker><strong style={{ display: "block", font: "900 23px var(--font-display)", marginTop: 8 }}>{formatMoney(order.estimatedCost, order.currency)}</strong><span className="cell-secondary">Estimate is not actual booked cost.</span></div></div><InfoStrip tone={costComplete ? "success" : "warning"} title={costComplete ? "Cost has recorded rows." : "Cost incomplete."}>Missing machine rate or yarn cost stays flagged.</InfoStrip><Link href={`/finance/orders/${order.id}`} className="btn btn--secondary btn--sm">Open detailed cost <ArrowRight size={12}/></Link></Card></Can>
+          
+          <Card className="col-6" title="Allowed next steps"><div className="page-grid"><div className="col-6"><Can perm="orders.approve" fallback={<span className="permission-note">Approval requires orders.approve.</span>}><Button variant="secondary" onClick={() => updateStatus("APPROVED", "APPROVED")}>Approve order <Check size={14}/></Button></Can><p className="field__hint">Only an authorized person other than the creator can approve.</p></div><div className="col-6"><Can perm="production.plan" fallback={<span className="permission-note">Plan release requires production.plan.</span>}><Button disabled={order.materialShortage || order.hasQualityHold} onClick={() => updateStatus("IN_PRODUCTION", "IN_PRODUCTION", "SPINNING")}>Release production plan <ArrowRight size={14}/></Button></Can><p className="field__hint">{order.materialShortage ? "⛔ Disabled: Raw yarn is short. Order yarn first before releasing plan." : "Disabled while yarn is short or a quality hold is open."}</p></div><div className="col-12"><Field label="Reason for change (required by server for cancellation/reversal)" hint="5+ characters. No append-only event should be edited or deleted."><TextInput value={reason} minLength={5} onChange={(event) => setReason(event.target.value)} placeholder="Explain what changed and why…"/></Field></div></div></Card>
+          
+          <Card className="col-12" title="Live System Boundary"><InfoStrip tone="warning">This page dynamically reads and updates orders from the live Supabase API! Material checks are synchronized with warehouse stock.</InfoStrip><LinkButton href={`/rolls?order=${encodeURIComponent(order.code)}`} variant="quiet">Related rolls <ArrowRight size={12}/></LinkButton></Card>
+        </>
+      )}
 
-      <Can perm="finance.read" fallback={<Card className="col-6" title="Cost visibility"><InfoStrip tone="info">Cost amounts and allocation details are restricted to finance.read. Ask Finance for the approved view.</InfoStrip></Card>}><Card className="col-6" title="Cost visibility"><div className="page-grid"><div className="col-6"><Kicker>Recorded actual/allocated</Kicker><strong style={{ display: "block", font: "900 23px var(--font-display)", marginTop: 8 }}>{formatMoney(order.recordedCost, order.currency)}</strong><span className="cell-secondary">Includes posted direct cost and assigned overhead.</span></div><div className="col-6"><Kicker>Estimate / pending</Kicker><strong style={{ display: "block", font: "900 23px var(--font-display)", marginTop: 8 }}>{formatMoney(order.estimatedCost, order.currency)}</strong><span className="cell-secondary">Estimate is not actual booked cost.</span></div></div><InfoStrip tone={costComplete ? "success" : "warning"} title={costComplete ? "Cost has recorded rows." : "Cost incomplete."}>Missing machine rate or yarn cost stays flagged.</InfoStrip><Link href={`/finance/orders/${order.id}`} className="btn btn--secondary btn--sm">Open detailed cost <ArrowRight size={12}/></Link></Card></Can>
-      
-      <Card className="col-6" title="Allowed next steps"><div className="page-grid"><div className="col-6"><Can perm="orders.approve" fallback={<span className="permission-note">Approval requires orders.approve.</span>}><Button variant="secondary" onClick={() => updateStatus("APPROVED", "APPROVED")}>Approve order <Check size={14}/></Button></Can><p className="field__hint">Only an authorized person other than the creator can approve.</p></div><div className="col-6"><Can perm="production.plan" fallback={<span className="permission-note">Plan release requires production.plan.</span>}><Button disabled={order.materialShortage || order.hasQualityHold} onClick={() => updateStatus("IN_PRODUCTION", "IN_PRODUCTION", "SPINNING")}>Release production plan <ArrowRight size={14}/></Button></Can><p className="field__hint">{order.materialShortage ? "⛔ Disabled: Raw yarn is short. Order yarn first before releasing plan." : "Disabled while yarn is short or a quality hold is open."}</p></div><div className="col-12"><Field label="Reason for change (required by server for cancellation/reversal)" hint="5+ characters. No append-only event should be edited or deleted."><TextInput value={reason} minLength={5} onChange={(event) => setReason(event.target.value)} placeholder="Explain what changed and why…"/></Field></div></div></Card>
-      
-      <Card className="col-12" title="Live System Boundary"><InfoStrip tone="warning">This page dynamically reads and updates orders from the live Supabase API! Material checks are synchronized with warehouse stock.</InfoStrip><LinkButton href={`/rolls?order=${encodeURIComponent(order.code)}`} variant="quiet">Related rolls <ArrowRight size={12}/></LinkButton></Card>
+      {isBuyer && (
+        <Card className="col-12" title="Order Communication & Support">
+          <InfoStrip tone="info" title="Dedicated Account Support">
+            Need adjustments or expedited dispatch on this order? Contact your account executive at <strong>orders@everesttextiles.demo</strong> or call the dispatch desk.
+          </InfoStrip>
+        </Card>
+      )}
     </div>
   </>;
 }
