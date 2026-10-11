@@ -26,6 +26,7 @@ export interface Order {
   buyer: string;
   buyerId: string;
   product: string;
+  productId?: string;
   colour: string;
   due: string;
   priority: "LOW" | "NORMAL" | "HIGH" | "URGENT";

@@ -67,22 +67,110 @@ export async function POST(req: Request) {
 
     // 3. Stage-Specific Material Flow
     if (operation.stage === "SPINNING") {
-      // Consume Raw Yarn if available
-      const rawYarnRes = await client.query("SELECT * FROM yarn_batches WHERE section = 'RAW_YARN' AND available >= $1 FOR UPDATE LIMIT 1", [totalConsumed.toNumber()]);
-      let itemCode = rawYarnRes.rows[0]?.item_code;
-      if (rawYarnRes.rows.length > 0) {
-        await client.query(
-          "UPDATE yarn_batches SET on_hand = on_hand - $1, available = available - $1 WHERE id = $2",
-          [totalConsumed.toNumber(), rawYarnRes.rows[0].id]
-        );
-      }
+      // 1. Consume from allocated batches for this operation!
+      const allocRes = await client.query(
+        `SELECT a.*, b.code as batch_code 
+         FROM operation_material_allocations a 
+         JOIN yarn_batches b ON a.batch_id = b.id 
+         WHERE a.operation_id = $1 AND a.status = 'RESERVED' 
+         ORDER BY a.created_at ASC 
+         FOR UPDATE`,
+        [operationId]
+      );
 
-      // If raw yarn batch wasn't found or had no item_code, resolve a valid yarn item code from yarn_items
-      if (!itemCode) {
+      let itemCode = "YRN-COT-40S";
+      let totalRemainingToConsume = totalConsumed.toNumber();
+
+      if (allocRes.rows.length > 0) {
+        itemCode = allocRes.rows[0].item_code;
+        for (const alloc of allocRes.rows) {
+          if (totalRemainingToConsume <= 0) break;
+          const unconsumed = parseFloat(alloc.allocated_qty) - parseFloat(alloc.consumed_qty);
+          const toDeduct = Math.min(unconsumed, totalRemainingToConsume);
+
+          // Deduct physical on-hand and relieve reserved stock
+          await client.query(
+            "UPDATE yarn_batches SET on_hand = GREATEST(0, on_hand - $1), reserved = GREATEST(0, reserved - $1) WHERE id = $2",
+            [toDeduct, alloc.batch_id]
+          );
+
+          await client.query(
+            "UPDATE yarn_items SET on_hand = GREATEST(0, on_hand - $1), reserved = GREATEST(0, reserved - $1) WHERE code = $2",
+            [toDeduct, alloc.item_code]
+          );
+
+          const newConsumed = parseFloat(alloc.consumed_qty) + toDeduct;
+          const isFullyConsumed = newConsumed >= parseFloat(alloc.allocated_qty) - 0.001;
+          await client.query(
+            "UPDATE operation_material_allocations SET consumed_qty = $1, status = $2, updated_at = NOW() WHERE id = $3",
+            [newConsumed, isFullyConsumed ? 'CONSUMED' : 'RESERVED', alloc.id]
+          );
+
+          await client.query(
+            `INSERT INTO yarn_movements (id, code, kind, batch_id, batch_code, item_code, quantity, unit, reference, actor)
+             VALUES ($1, $2, 'ISSUE', $3, $4, $5, $6, 'KG', $7, $8)`,
+            [
+              crypto.randomUUID(),
+              `MOV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+              alloc.batch_id,
+              alloc.batch_code,
+              alloc.item_code,
+              toDeduct,
+              `Consumed by operation ${operation.code}`,
+              actor || 'Operator'
+            ]
+          );
+
+          totalRemainingToConsume -= toDeduct;
+        }
+
+        // If extra material was consumed beyond allocation (e.g. unexpected waste), deduct from batch
+        if (totalRemainingToConsume > 0) {
+          const lastAlloc = allocRes.rows[allocRes.rows.length - 1];
+          await client.query(
+            "UPDATE yarn_batches SET on_hand = GREATEST(0, on_hand - $1) WHERE id = $2",
+            [totalRemainingToConsume, lastAlloc.batch_id]
+          );
+          await client.query(
+            "UPDATE yarn_items SET on_hand = GREATEST(0, on_hand - $1) WHERE code = $2",
+            [totalRemainingToConsume, lastAlloc.item_code]
+          );
+        }
+
+        // If operation has reached or exceeded its planned target, release any unused remaining reservation
+        const updatedGoodTotal = parseFloat(operation.good) + parsedGood.toNumber();
+        if (updatedGoodTotal >= parseFloat(operation.target)) {
+          const remainingAllocs = await client.query(
+            "SELECT a.*, yb.code as batch_code FROM operation_material_allocations a JOIN yarn_batches yb ON a.batch_id = yb.id WHERE a.operation_id = $1 AND a.status = 'RESERVED' FOR UPDATE",
+            [operationId]
+          );
+          for (const rem of remainingAllocs.rows) {
+            const unusedQty = parseFloat(rem.allocated_qty) - parseFloat(rem.consumed_qty);
+            if (unusedQty > 0) {
+              await client.query(
+                "UPDATE yarn_batches SET reserved = GREATEST(0, reserved - $1), available = available + $1 WHERE id = $2",
+                [unusedQty, rem.batch_id]
+              );
+              await client.query(
+                "UPDATE yarn_items SET reserved = GREATEST(0, reserved - $1), available = available + $1 WHERE code = $2",
+                [unusedQty, rem.item_code]
+              );
+              await client.query(
+                `INSERT INTO yarn_movements (id, code, kind, batch_id, batch_code, item_code, quantity, unit, reference, actor)
+                 VALUES ($1, $2, 'REVERSAL', $3, $4, $5, $6, 'KG', $7, $8)`,
+                [crypto.randomUUID(), `MOV-${Date.now()}-${Math.floor(Math.random() * 1000)}`, rem.batch_id, rem.batch_code, rem.item_code, unusedQty, `Unused reservation release for ${operation.code}`, actor || 'System']
+              );
+            }
+            await client.query("UPDATE operation_material_allocations SET status = 'RELEASED' WHERE id = $1", [rem.id]);
+          }
+        }
+      } else {
+        // Fallback for legacy operations without prior allocation records:
+        // Must resolve BOM yarn item code and consume from matching RAW_YARN batch FIFO
         const bomRes = await client.query(
           `SELECT y.code FROM bill_of_materials b 
            JOIN products p ON b.product_id = p.id 
-           JOIN orders o ON (o.product = p.name OR o.product = p.code) 
+           JOIN orders o ON (o.product = p.name OR o.product = p.code OR o.product_id = p.id) 
            JOIN yarn_items y ON b.yarn_item_id = y.id 
            WHERE o.code = $1 LIMIT 1`,
           [operation.order_code]
@@ -92,6 +180,22 @@ export async function POST(req: Request) {
         } else {
           const firstYarnRes = await client.query("SELECT code FROM yarn_items ORDER BY code ASC LIMIT 1");
           itemCode = firstYarnRes.rows[0]?.code || "YRN-COT-40S";
+        }
+
+        const rawYarnRes = await client.query(
+          "SELECT * FROM yarn_batches WHERE item_code = $1 AND section = 'RAW_YARN' AND available >= $2 ORDER BY received_at ASC FOR UPDATE LIMIT 1",
+          [itemCode, totalConsumed.toNumber()]
+        );
+        if (rawYarnRes.rows.length > 0) {
+          const rawBatch = rawYarnRes.rows[0];
+          await client.query(
+            "UPDATE yarn_batches SET on_hand = GREATEST(0, on_hand - $1), available = GREATEST(0, available - $1) WHERE id = $2",
+            [totalConsumed.toNumber(), rawBatch.id]
+          );
+          await client.query(
+            "UPDATE yarn_items SET on_hand = GREATEST(0, on_hand - $1), available = GREATEST(0, available - $1) WHERE code = $2",
+            [totalConsumed.toNumber(), itemCode]
+          );
         }
       }
 

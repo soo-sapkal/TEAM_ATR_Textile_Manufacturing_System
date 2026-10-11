@@ -179,7 +179,7 @@ export function NewOrderPage() {
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ buyer, product: productName, colour, quantity, unit, due, priority, terms })
+        body: JSON.stringify({ buyer, product: productName, productId, colour, quantity, unit, due, priority, terms })
       });
       const resData = await res.json();
       if (resData.success) {

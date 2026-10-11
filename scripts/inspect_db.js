@@ -24,11 +24,11 @@ async function run() {
     const sampleBatches = await pool.query("SELECT * FROM yarn_batches LIMIT 5");
     console.log('Sample yarn_batches:', JSON.stringify(sampleBatches.rows, null, 2));
 
-    const sampleOrders = await pool.query("SELECT * FROM orders LIMIT 3");
-    console.log('Sample orders:', JSON.stringify(sampleOrders.rows, null, 2));
+    const orders = await pool.query("SELECT id, code, product FROM orders");
+    console.log('Orders:', orders.rows);
 
-    const sampleProducts = await pool.query("SELECT * FROM products LIMIT 3");
-    console.log('Sample products:', JSON.stringify(sampleProducts.rows, null, 2));
+    const products = await pool.query("SELECT id, code, name FROM products");
+    console.log('Products:', products.rows);
 
   } catch (err) {
     console.error('Error:', err);

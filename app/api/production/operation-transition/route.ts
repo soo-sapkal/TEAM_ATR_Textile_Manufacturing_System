@@ -1,11 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { Pool } from "pg";
+import { pool } from "@/lib/db/pool";
 import { verifyToken } from "@/lib/auth/auth";
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || "postgresql://postgres.xaqbisnaetgsjiortzgi:sohamsapkal@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres",
-});
 
 export async function POST(req: Request) {
   try {
@@ -49,6 +45,31 @@ export async function POST(req: Request) {
     } else if (action === "cancel") {
       newState = "CANCELLED";
       machineState = "IDLE";
+
+      // Release unconsumed material reservations
+      const allocs = await pool.query(
+        "SELECT a.*, yb.code as batch_code FROM operation_material_allocations a JOIN yarn_batches yb ON a.batch_id = yb.id WHERE a.operation_id = $1 AND a.status = 'RESERVED'",
+        [operationId]
+      );
+      for (const a of allocs.rows) {
+        const remaining = parseFloat(a.allocated_qty) - parseFloat(a.consumed_qty);
+        if (remaining > 0) {
+          await pool.query(
+            "UPDATE yarn_batches SET reserved = GREATEST(0, reserved - $1), available = available + $1 WHERE id = $2",
+            [remaining, a.batch_id]
+          );
+          await pool.query(
+            "UPDATE yarn_items SET reserved = GREATEST(0, reserved - $1), available = available + $1 WHERE code = $2",
+            [remaining, a.item_code]
+          );
+          await pool.query(
+            `INSERT INTO yarn_movements (id, code, kind, batch_id, batch_code, item_code, quantity, unit, reference, actor)
+             VALUES ($1, $2, 'REVERSAL', $3, $4, $5, $6, 'KG', $7, $8)`,
+            [crypto.randomUUID(), `MOV-${Date.now()}-${Math.floor(Math.random() * 1000)}`, a.batch_id, a.batch_code, a.item_code, remaining, `Cancelled operation ${operation.code}`, actor || 'Supervisor']
+          );
+        }
+        await pool.query("UPDATE operation_material_allocations SET status = 'RELEASED' WHERE id = $1", [a.id]);
+      }
     }
 
     // Update Operation

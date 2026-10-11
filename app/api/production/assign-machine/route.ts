@@ -77,30 +77,159 @@ export async function POST(req: Request) {
     const unit = operation.unit || "KG";
 
     if (operation.stage === 'SPINNING') {
-      // Must have raw yarn in warehouse
-      const rawRes = await client.query(
-        "SELECT COALESCE(SUM(on_hand), 0) as total_on_hand, COALESCE(SUM(available), 0) as total_avail FROM yarn_batches WHERE section = 'RAW_YARN' AND status = 'AVAILABLE'"
+      // 1. Resolve order and product
+      const orderRes = await client.query(
+        "SELECT * FROM orders WHERE code = $1",
+        [operation.order_code]
       );
-      const totalRawOnHand = parseFloat(rawRes.rows[0].total_on_hand);
-      const totalRaw = parseFloat(rawRes.rows[0].total_avail);
+      const order = orderRes.rows[0];
+      if (!order) {
+        throw new Error(`Order '${operation.order_code}' not found for operation '${operation.code}'`);
+      }
 
-      const committedRes = await client.query(
-        `SELECT COALESCE(SUM(GREATEST(0, target - good)), 0) as committed 
-         FROM operations 
-         WHERE stage = 'SPINNING' AND id != $1 AND status IN ('PLANNED', 'IN_PROGRESS', 'PAUSED') AND machine_code IS NOT NULL`,
+      // Resolve product ID: either order.product_id or match products by name/code
+      let productId = order.product_id;
+      if (!productId) {
+        const prodRes = await client.query(
+          "SELECT id FROM products WHERE name = $1 OR code = $1",
+          [order.product]
+        );
+        if (prodRes.rows.length === 1) {
+          productId = prodRes.rows[0].id;
+        }
+      }
+
+      // Load BOM requirements
+      let bomItems: any[] = [];
+      if (productId) {
+        const bomRes = await client.query(
+          `SELECT b.*, y.code as yarn_code, y.description as yarn_name, y.unit as yarn_unit
+           FROM bill_of_materials b
+           JOIN yarn_items y ON b.yarn_item_id = y.id
+           WHERE b.product_id = $1`,
+          [productId]
+        );
+        bomItems = bomRes.rows;
+      } else {
+        const bomFallback = await client.query(
+          `SELECT b.*, y.code as yarn_code, y.description as yarn_name, y.unit as yarn_unit
+           FROM bill_of_materials b
+           JOIN products p ON b.product_id = p.id
+           JOIN yarn_items y ON b.yarn_item_id = y.id
+           WHERE p.name = $1 OR p.code = $1`,
+          [order.product]
+        );
+        bomItems = bomFallback.rows;
+      }
+
+      if (bomItems.length === 0) {
+        throw new Error(`Cannot assign spinning: product '${order.product}' has no Bill of Materials (BOM) configured.`);
+      }
+
+      // Calculate total ratio across BOM components
+      const totalBomRatio = bomItems.reduce((acc, b) => acc + parseFloat(b.quantity_required), 0);
+      if (totalBomRatio <= 0) {
+        throw new Error(`Cannot assign spinning: invalid BOM quantity_required for product '${order.product}'`);
+      }
+
+      // Release any prior reservations for this operation if re-assigning
+      const existingAllocs = await client.query(
+        "SELECT a.*, yb.code as batch_code FROM operation_material_allocations a JOIN yarn_batches yb ON a.batch_id = yb.id WHERE a.operation_id = $1 AND a.status = 'RESERVED' FOR UPDATE",
         [operationId]
       );
-      const committedRaw = parseFloat(committedRes.rows[0].committed);
-      const availableRaw = Math.max(0, totalRaw - committedRaw);
+      for (const alloc of existingAllocs.rows) {
+        const relQty = parseFloat(alloc.allocated_qty) - parseFloat(alloc.consumed_qty);
+        if (relQty > 0) {
+          await client.query(
+            "UPDATE yarn_batches SET reserved = GREATEST(0, reserved - $1), available = available + $1 WHERE id = $2",
+            [relQty, alloc.batch_id]
+          );
+          await client.query(
+            "UPDATE yarn_items SET reserved = GREATEST(0, reserved - $1), available = available + $1 WHERE code = $2",
+            [relQty, alloc.item_code]
+          );
+          await client.query(
+            `INSERT INTO yarn_movements (id, code, kind, batch_id, batch_code, item_code, quantity, unit, reference, actor)
+             VALUES ($1, $2, 'REVERSAL', $3, $4, $5, $6, 'KG', $7, $8)`,
+            [crypto.randomUUID(), `MOV-${Date.now()}-${Math.floor(Math.random() * 1000)}`, alloc.batch_id, alloc.batch_code, alloc.item_code, relQty, `Reversal for operation ${operation.code}`, actor || 'Supervisor']
+          );
+        }
+        await client.query("UPDATE operation_material_allocations SET status = 'RELEASED' WHERE id = $1", [alloc.id]);
+      }
 
-      if (totalRawOnHand <= 0) {
-        throw new Error("Cannot assign spinning: no raw yarn is available in raw material warehouse.");
-      }
-      if (totalRaw <= 0 || availableRaw <= 0) {
-        throw new Error("Cannot assign spinning: all raw yarn in warehouse is already committed to active spinning tasks.");
-      }
-      if (targetToAssign > availableRaw) {
-        throw new Error(`Cannot assign spinning: requested target (${targetToAssign} ${unit}) exceeds available raw yarn in warehouse (${availableRaw} ${unit}).`);
+      // Now validate and reserve each required yarn component individually
+      for (const b of bomItems) {
+        const itemCode = b.yarn_code;
+        const yarnName = b.yarn_name;
+        const ratio = parseFloat(b.quantity_required) / totalBomRatio;
+        const requiredQty = targetToAssign * ratio;
+
+        const rawRes = await client.query(
+          "SELECT COALESCE(SUM(on_hand), 0) as total_on_hand, COALESCE(SUM(available), 0) as total_avail FROM yarn_batches WHERE item_code = $1 AND section = 'RAW_YARN' AND status = 'AVAILABLE'",
+          [itemCode]
+        );
+        const totalOnHand = parseFloat(rawRes.rows[0].total_on_hand);
+        const totalAvail = parseFloat(rawRes.rows[0].total_avail);
+
+        if (totalOnHand <= 0) {
+          throw new Error(`Cannot assign spinning: no raw yarn available for '${itemCode}' (${yarnName}) in raw material warehouse.`);
+        }
+        if (totalAvail <= 0) {
+          throw new Error(`Cannot assign spinning: all raw yarn for '${itemCode}' (${yarnName}) is already committed/reserved.`);
+        }
+        if (requiredQty > totalAvail) {
+          throw new Error(`Cannot assign spinning: requested target requires ${requiredQty.toFixed(1)} KG of '${itemCode}' (${yarnName}), but only ${totalAvail.toFixed(1)} KG is available in warehouse.`);
+        }
+
+        // Atomically reserve batches using FIFO (received_at ASC, id ASC)
+        let needed = requiredQty;
+        const batches = await client.query(
+          "SELECT id, code, item_code, available FROM yarn_batches WHERE item_code = $1 AND section = 'RAW_YARN' AND status = 'AVAILABLE' AND available > 0 ORDER BY received_at ASC, id ASC FOR UPDATE",
+          [itemCode]
+        );
+
+        for (const batch of batches.rows) {
+          if (needed <= 0) break;
+          const bAvail = parseFloat(batch.available);
+          const toReserve = Math.min(bAvail, needed);
+
+          await client.query(
+            "UPDATE yarn_batches SET reserved = reserved + $1, available = available - $1 WHERE id = $2",
+            [toReserve, batch.id]
+          );
+
+          await client.query(
+            "UPDATE yarn_items SET reserved = reserved + $1, available = available - $1 WHERE code = $2",
+            [toReserve, itemCode]
+          );
+
+          await client.query(
+            `INSERT INTO operation_material_allocations (id, operation_id, order_code, batch_id, item_code, allocated_qty, consumed_qty, unit, status)
+             VALUES ($1, $2, $3, $4, $5, $6, 0, 'KG', 'RESERVED')`,
+            [crypto.randomUUID(), operationId, operation.order_code, batch.id, itemCode, toReserve]
+          );
+
+          await client.query(
+            `INSERT INTO yarn_movements (id, code, kind, batch_id, batch_code, item_code, quantity, unit, reference, actor)
+             VALUES ($1, $2, 'RESERVATION', $3, $4, $5, $6, 'KG', $7, $8)`,
+            [
+              crypto.randomUUID(),
+              `MOV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+              batch.id,
+              batch.code,
+              itemCode,
+              toReserve,
+              `Reservation for operation ${operation.code}`,
+              actor || 'Supervisor'
+            ]
+          );
+
+          needed -= toReserve;
+        }
+
+        if (needed > 0.001) {
+          throw new Error(`Cannot assign spinning: unable to lock sufficient batches for '${itemCode}'.`);
+        }
       }
     } else if (operation.stage === 'WEAVING') {
       // Must have spun yarn in spinning storage produced for this order

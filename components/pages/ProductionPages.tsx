@@ -26,9 +26,16 @@ const PRIORITY_RANK = { "URGENT": 1, "HIGH": 2, "NORMAL": 3, "LOW": 4 };
 
 export function computeOpReadiness(op: Operation, data: any) {
   if (op.stage === "SPINNING") {
-    const totalRaw = (data.yarnBatches || [])
-      .filter((b: any) => b.section === "RAW_YARN" && b.status === "AVAILABLE")
-      .reduce((sum: number, b: any) => sum + parseFloat(b.available || 0), 0);
+    const order = (data.orders || []).find((o: any) => o.code === op.orderCode);
+    let itemCode: string | null = null;
+    if (order?.materialReadiness?.details?.[0]?.yarnCode) {
+      itemCode = order.materialReadiness.details[0].yarnCode;
+    }
+
+    const eligibleBatches = (data.yarnBatches || []).filter((b: any) => 
+      b.section === "RAW_YARN" && b.status === "AVAILABLE" && (!itemCode || b.itemCode === itemCode)
+    );
+    const totalRaw = eligibleBatches.reduce((sum: number, b: any) => sum + parseFloat(b.available || 0), 0);
     const committedRaw = (data.operations || [])
       .filter((o: any) => o.stage === "SPINNING" && o.id !== op.id && ["PLANNED", "IN_PROGRESS", "PAUSED"].includes(o.status) && o.machineCode)
       .reduce((sum: number, o: any) => sum + Math.max(0, parseFloat(o.target || 0) - parseFloat(o.good || 0)), 0);
@@ -38,7 +45,11 @@ export function computeOpReadiness(op: Operation, data: any) {
       available,
       unit: op.unit || "KG",
       isBlocked,
-      reason: isBlocked ? "Cannot assign spinning: no raw yarn available in warehouse. Wait for inventory receipt." : ""
+      reason: isBlocked 
+        ? itemCode 
+          ? `Cannot assign spinning: no raw yarn available for '${itemCode}' in warehouse.`
+          : "Cannot assign spinning: no raw yarn available in warehouse. Wait for inventory receipt." 
+        : ""
     };
   }
 
@@ -1224,10 +1235,101 @@ function MarkCompleteModal({
 }
 
 function PlanPage({ id }: { id: string }) {
-  const { data, user } = useDemo();
+  const { data, user, toast } = useDemo();
+  const [releasing, setReleasing] = useState(false);
   const order = data.orders.find((candidate) => candidate.id === id || candidate.code === id || candidate.code === `ORD-${id}`);
   if (!order) return <><PageHeader title="Plan not found"/><EmptyState title="No plan record" action={<LinkButton href="/production">Production board</LinkButton>}/></>;
-  return <><PageHeader eyebrow="Plan readiness" title={`Plan · ${order.code}`} description={`${order.product} · due ${formatDate(order.due)} · ${formatQty(order.ordered, order.unit, 0)}`} actions={<LinkButton href="/production" variant="secondary"><ArrowLeft size={14}/> Production board</LinkButton>} meta={<StatusBadge status={order.status}/>} /><div className="two-pane"><div className="stack"><Card title="Plan stages"><DataTable headers={["Sequence", "Stage", "Machine", "Target", "State"]} rows={data.operations.filter((operation) => operation.orderCode === order.code).map((operation, index) => [String(index + 1).padStart(2,"0"), operation.stage, operation.machineCode ?? "—", formatQty(operation.target,operation.unit,0), <StatusBadge status={operation.status}/>])}/><div className="form-actions">{hasPermission(user, "production.plan") ? <Button disabled title="No plan-release API or verified BOM/reservation transaction is connected."><Play size={15}/> Release unavailable in demo</Button> : <span className="permission-note">Plan release requires production.plan.</span>}<span className="field__hint">{order.materialShortage ? "Release guard: yarn is short. " : order.hasQualityHold ? "Release guard: quality hold is open. " : ""}No plan, batch reservation, or release is recorded from this demo screen; a verified BOM/yield and backend transaction are required.</span></div></Card><Card title="Material and stage eligibility"><InfoStrip tone={order.materialShortage ? "danger" : order.hasQualityHold ? "warning" : "success"} title={order.materialShortage ? "Material shortage" : order.hasQualityHold ? "Quality hold" : "Material ready in this demo"}>{order.materialShortage ? "Do not release this plan. The demo only shows the order's shortage flag; no material reservation is performed." : order.hasQualityHold ? "Resolve the order's quality hold before release. The authoritative backend must re-check this state atomically." : "A real release must show every reserved yarn batch and accepted quantity before the plan begins."}</InfoStrip><div className="permission-note">Order unit: {order.unit}. Yarn unit: KG. A BOM/yield recipe is required to convert stage demand; no conversion is performed in this prototype.</div></Card></div><Card title="Plan actors"><InfoStrip tone="info">Planner assignment and approval are separate permissions. Creator cannot self-approve a request if the authoritative policy requires separation.</InfoStrip><div className="permission-note">Current demo order: {order.code}<br/>Due date: {formatDate(order.due)}<br/>Priority: {order.priority}</div></Card></div></>;
+
+  const canRelease = hasPermission(user, "production.plan") && !order.materialShortage && !order.hasQualityHold && order.status !== "IN_PRODUCTION";
+
+  return <>
+    <PageHeader 
+      eyebrow="Plan readiness" 
+      title={`Plan · ${order.code}`} 
+      description={`${order.product} · due ${formatDate(order.due)} · ${formatQty(order.ordered, order.unit, 0)}`} 
+      actions={<LinkButton href="/production" variant="secondary"><ArrowLeft size={14}/> Production board</LinkButton>} 
+      meta={<StatusBadge status={order.status}/>} 
+    />
+    <div className="two-pane">
+      <div className="stack">
+        <Card title="Plan stages">
+          <DataTable 
+            headers={["Sequence", "Stage", "Machine", "Target", "State"]} 
+            rows={data.operations.filter((operation) => operation.orderCode === order.code).map((operation, index) => [
+              String(index + 1).padStart(2,"0"), 
+              operation.stage, 
+              operation.machineCode ?? "—", 
+              formatQty(operation.target,operation.unit,0), 
+              <StatusBadge status={operation.status}/>
+            ])}
+          />
+          <div className="form-actions">
+            {hasPermission(user, "production.plan") ? (
+              <Button 
+                variant="primary"
+                disabled={!canRelease || releasing} 
+                onClick={async () => {
+                  setReleasing(true);
+                  try {
+                    const res = await fetch(`/api/orders/${order.id}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ status: "IN_PRODUCTION", displayStatus: "IN_PRODUCTION", stage: "SPINNING" })
+                    });
+                    const outcome = await res.json();
+                    if (outcome.success) {
+                      toast("Plan Released", `Production plan for ${order.code} released and operations generated.`, "success");
+                      window.location.href = "/production";
+                    } else {
+                      toast("Error", outcome.error, "error");
+                    }
+                  } catch (err: any) {
+                    toast("Error", err.message, "error");
+                  } finally {
+                    setReleasing(false);
+                  }
+                }}
+              >
+                <Play size={15}/> {order.status === "IN_PRODUCTION" ? "Plan already released" : "Release production plan"}
+              </Button>
+            ) : (
+              <span className="permission-note">Plan release requires production.plan permission.</span>
+            )}
+            <span className="field__hint">
+              {order.materialShortage ? "⛔ Release guard: raw yarn is short in warehouse. " : order.hasQualityHold ? "⚠️ Release guard: quality hold is open. " : ""}
+              Releasing this plan validates BOM yields and generates required production operations.
+            </span>
+          </div>
+        </Card>
+        <Card title="Material and stage eligibility">
+          <InfoStrip 
+            tone={order.materialShortage ? "danger" : order.hasQualityHold ? "warning" : "success"} 
+            title={order.materialShortage ? "Material shortage" : order.hasQualityHold ? "Quality hold" : "Material ready in warehouse"}
+          >
+            {order.materialShortage 
+              ? "Do not release this plan. Raw yarn stock is insufficient for the BOM requirements. Order raw yarn before starting." 
+              : order.hasQualityHold 
+                ? "Resolve the order's quality hold before release." 
+                : "Sufficient raw yarn exists in warehouse according to product BOM recipe. Ready to release to floor."}
+          </InfoStrip>
+          <div className="permission-note">
+            Order unit: {order.unit}. Raw yarn unit: KG. Evaluated using bill of materials recipe.
+          </div>
+        </Card>
+      </div>
+      <Card title="Plan actors">
+        <InfoStrip tone="info">
+          Planner assignment and approval are separate permissions.
+        </InfoStrip>
+        <div className="permission-note">
+          Current order: {order.code}<br/>
+          Product: {order.product}<br/>
+          Due date: {formatDate(order.due)}<br/>
+          Priority: {order.priority}
+        </div>
+      </Card>
+    </div>
+  </>;
 }
 
 function OperationConsole({ id }: { id: string }) {

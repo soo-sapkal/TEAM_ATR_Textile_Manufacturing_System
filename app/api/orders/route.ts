@@ -1,12 +1,8 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { Pool } from "pg";
+import { pool } from "@/lib/db/pool";
 import { verifyToken } from "@/lib/auth/auth";
 import { snakeToCamel } from "@/lib/supabase/adapter";
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || "postgresql://postgres.xaqbisnaetgsjiortzgi:sohamsapkal@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres",
-});
 
 export async function GET() {
   const cookieStore = await cookies();
@@ -39,7 +35,7 @@ export async function GET() {
     const boms = bomsRes.rows;
 
     const ordersWithReadiness = ordersRes.rows.map((order) => {
-      const prod = products.find(p => p.name === order.product || p.code === order.product);
+      const prod = products.find(p => p.id === order.product_id || p.name === order.product || p.code === order.product);
       const prodBoms = prod ? boms.filter(b => b.product_id === prod.id) : [];
 
       let hasShortage = false;
@@ -71,6 +67,7 @@ export async function GET() {
 
       return {
         ...order,
+        product_id: prod?.id || order.product_id || null,
         material_shortage: hasShortage,
         at_risk: hasShortage || order.at_risk,
         material_readiness: {
@@ -112,17 +109,36 @@ export async function POST(req: Request) {
     const orderQty = parseFloat(body.quantity || 0);
     const revenue = orderQty * 250;
 
+    // Resolve product_id reliably
+    let resolvedProductId = body.productId || body.product_id || null;
+    if (!resolvedProductId && body.product) {
+      const prodLookup = await pool.query("SELECT id, name FROM products WHERE name = $1 OR code = $1", [body.product]);
+      if (prodLookup.rows.length === 1) {
+        resolvedProductId = prodLookup.rows[0].id;
+      }
+    }
+
     // Check BOM feasibility against current yarn stock
-    const bomsRes = await pool.query(`
-      SELECT b.*, y.code as yarn_code, y.description as yarn_name, y.available as yarn_available, y.unit as yarn_unit
-      FROM bill_of_materials b
-      JOIN yarn_items y ON b.yarn_item_id = y.id
-      JOIN products p ON b.product_id = p.id
-      WHERE p.name = $1 OR p.code = $1
-    `, [body.product]);
+    let bomsRes: any;
+    if (resolvedProductId) {
+      bomsRes = await pool.query(`
+        SELECT b.*, y.code as yarn_code, y.description as yarn_name, y.available as yarn_available, y.unit as yarn_unit
+        FROM bill_of_materials b
+        JOIN yarn_items y ON b.yarn_item_id = y.id
+        WHERE b.product_id = $1
+      `, [resolvedProductId]);
+    } else {
+      bomsRes = await pool.query(`
+        SELECT b.*, y.code as yarn_code, y.description as yarn_name, y.available as yarn_available, y.unit as yarn_unit
+        FROM bill_of_materials b
+        JOIN yarn_items y ON b.yarn_item_id = y.id
+        JOIN products p ON b.product_id = p.id
+        WHERE p.name = $1 OR p.code = $1
+      `, [body.product]);
+    }
 
     let hasShortage = false;
-    const details = bomsRes.rows.map(b => {
+    const details = bomsRes.rows.map((b: any) => {
       const requiredQty = parseFloat(b.quantity_required) * orderQty;
       const availableQty = parseFloat(b.yarn_available || 0);
       const isShort = requiredQty > availableQty;
@@ -142,13 +158,13 @@ export async function POST(req: Request) {
     
     const { rows } = await pool.query(`
       INSERT INTO orders (
-        code, buyer, buyer_id, product, colour, due, priority, unit, 
+        code, buyer, buyer_id, product, product_id, colour, due, priority, unit, 
         ordered, remaining, status, display_status, currency, revenue,
         material_shortage, at_risk
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
       RETURNING *
     `, [
-      code, body.buyer, buyerId, body.product, body.colour, body.due, body.priority || "NORMAL", body.unit || "M",
+      code, body.buyer, buyerId, body.product, resolvedProductId, body.colour, body.due, body.priority || "NORMAL", body.unit || "M",
       orderQty, orderQty, "DRAFT", "DRAFT", "INR", revenue,
       hasShortage, isAtRisk
     ]);
@@ -161,7 +177,7 @@ export async function POST(req: Request) {
         canStart: !hasShortage,
         hasShortage,
         deficitSummary: hasShortage 
-          ? `Shortage: Need +${details.filter(d => d.isShort).map(d => `${d.deficitQty.toFixed(1)} ${d.unit} ${d.yarnCode}`).join(", ")}`
+          ? `Shortage: Need +${details.filter((d: any) => d.isShort).map((d: any) => `${d.deficitQty.toFixed(1)} ${d.unit} ${d.yarnCode}`).join(", ")}`
           : "Sufficient Yarn (Ready to start)",
         details
       }
