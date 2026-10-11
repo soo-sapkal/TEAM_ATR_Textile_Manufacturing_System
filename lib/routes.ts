@@ -7,7 +7,7 @@ export const ROUTES = [
   ["/machines", "Machine board"], ["/machines/:id", "Machine detail"],
   ["/quality", "Inspection queue"], ["/quality/inspect/:code", "Inspect a roll"], ["/quality/rework", "Rework"], ["/quality/defects", "Defect analytics"],
   ["/rolls", "Rolls"], ["/rolls/:code", "Roll passport"], ["/scan", "Scan a roll"], ["/r/:token", "QR roll lookup"],
-  ["/dispatch", "Dispatch"], ["/dispatch/new", "New shipment"], ["/dispatch/:id", "Load the truck"], ["/dispatch/stock", "Finished stock"], ["/print/dispatch/:id", "Dispatch note"], ["/print/roll-tag/:id", "Roll tag"],
+  ["/dispatch", "Dispatch"], ["/dispatch/dashboard", "Dispatch Dashboard"], ["/dispatch/orders", "Active & Pending Orders"], ["/dispatch/new", "New shipment"], ["/dispatch/:id", "Load the truck"], ["/dispatch/stock", "Finished stock"], ["/dispatch/scan", "Final QC Scan"], ["/print/dispatch/:id", "Dispatch note"], ["/print/roll-tag/:id", "Roll tag"],
   ["/finance", "Finance"], ["/finance/orders/:id", "Order cost"], ["/finance/entries", "Cost entries"], ["/finance/payments", "Buyer payments"], ["/finance/expenses", "Expenses"],
   ["/hr/attendance", "Attendance"], ["/hr/payroll", "Payroll periods"], ["/hr/payroll/:id", "Payroll period"],
   ["/reports", "Reports"], ["/reports/month-close", "Month close"], ["/verify", "Integrity checks"],

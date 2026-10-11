@@ -2,7 +2,7 @@
 
 /* eslint-disable react/jsx-key -- These JSX values are typed DataTable row descriptors; DataTable creates keyed table rows/cells, while direct rendered lists keep explicit entity keys. */
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { RoleLink as Link } from "@/components/ui/primitives";
 import { ArrowLeft, ArrowRight, ClipboardPlus, FileCheck2, History, PackagePlus, Plus, Search } from "lucide-react";
 import Decimal from "decimal.js";
@@ -25,32 +25,116 @@ export function InventoryRoute({ path, id }: { path: string; id?: string }) {
 }
 
 function InventoryPage() {
-  const { data, user } = useDemo();
+  const { data, user, toast } = useDemo();
   const [query, setQuery] = useState("");
+  const [editingItem, setEditingItem] = useState<YarnItem | null>(null);
+  const [newReorderLevel, setNewReorderLevel] = useState("");
+  const [savingReorder, setSavingReorder] = useState(false);
+
   const filtered = useMemo(() => data.yarnItems.filter((item) => `${item.code} ${item.description} ${item.colour}`.toLowerCase().includes(query.toLowerCase())), [data.yarnItems, query]);
   const totals = [...new Set(data.yarnItems.map((item) => item.unit))].map((unit) => ({ unit, onHand: data.yarnItems.filter((item) => item.unit === unit).reduce((sum, item) => sum.plus(item.onHand), new Decimal(0)), reserved: data.yarnItems.filter((item) => item.unit === unit).reduce((sum, item) => sum.plus(item.reserved), new Decimal(0)), available: data.yarnItems.filter((item) => item.unit === unit).reduce((sum, item) => sum.plus(item.available), new Decimal(0)), held: data.yarnItems.filter((item) => item.unit === unit).reduce((sum, item) => sum.plus(item.held), new Decimal(0)) }));
   const totalFor = (key: "onHand" | "reserved" | "available" | "held") => totals.map((total) => formatQty(total[key].toFixed(3), total.unit, 1)).join(" · ") || "0";
-  const isManagement = user?.roles?.includes("SUPERVISOR") || user?.roles?.includes("OWNER");
-  const lowStockItems = data.yarnItems.filter(item => new Decimal(item.available).lte(new Decimal(item.reorderLevel).mul(1.2)));
+  
+  const criticalItems = data.yarnItems.filter(item => new Decimal(item.available).lt(item.reorderLevel));
+  const approachingItems = data.yarnItems.filter(item => !new Decimal(item.available).lt(item.reorderLevel) && new Decimal(item.available).lte(new Decimal(item.reorderLevel).mul(1.25)));
+
+  async function handleSaveReorder(e: FormEvent) {
+    e.preventDefault();
+    if (!editingItem) return;
+    setSavingReorder(true);
+    try {
+      const res = await fetch("/api/inventory", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          itemCode: editingItem.code,
+          reorderLevel: newReorderLevel
+        })
+      });
+      const resData = await res.json();
+      if (resData.success) {
+        toast("Safety threshold updated", `${editingItem.code} reorder level is now ${newReorderLevel} ${editingItem.unit}`, "success");
+        setEditingItem(null);
+        window.location.reload();
+      } else {
+        toast("Failed to update", resData.error, "error");
+      }
+    } catch (err: any) {
+      toast("Error", err.message, "error");
+    } finally {
+      setSavingReorder(false);
+    }
+  }
 
   return <>
-    <PageHeader eyebrow="Make & move · yarn store" title="Yarn inventory" description="Physical on-hand, reserved, available, and held stay separate. Quantities are batch-aware and displayed in each item's unit." actions={<><LinkButton href="/inventory/movements" variant="secondary"><History size={14}/> Movement ledger</LinkButton>{hasPermission(user, "inventory.receive") && <LinkButton href="/inventory/receive" variant="primary"><PackagePlus size={14}/> Receive yarn</LinkButton>}</>} meta={<><Tag>WH-YARN · DEMO</Tag><Tag>5 MATERIAL ITEMS</Tag></>} />
-    {isManagement && (
-      <div style={{ marginBottom: 24 }}>
-        {lowStockItems.length > 0 ? (
-          <InfoStrip tone="warning" title="Stock Level Alerts">
-            {lowStockItems.length} yarn {lowStockItems.length === 1 ? 'item is' : 'items are'} approaching or below reorder levels. Please review stock for: <strong>{lowStockItems.map(i => i.code).join(", ")}</strong>.
-          </InfoStrip>
-        ) : (
-          <InfoStrip tone="success" title="Stock Level Alerts">
-            All yarn products are currently maintaining healthy inventory levels above their reorder thresholds.
-          </InfoStrip>
-        )}
+    <PageHeader eyebrow="Make & move · raw material store" title="Yarn inventory" description="Physical on-hand, reserved, available, and held stay separate. Automated safety thresholds trigger warnings before raw materials run low." actions={<><LinkButton href="/inventory/movements" variant="secondary"><History size={14}/> Movement ledger</LinkButton>{hasPermission(user, "inventory.receive") && <LinkButton href="/inventory/receive" variant="primary"><PackagePlus size={14}/> Receive yarn</LinkButton>}</>} meta={<><Tag>WH-YARN · LIVE SUPABASE</Tag><Tag>{data.yarnItems.length} MATERIAL ITEMS</Tag></>} />
+    
+    {criticalItems.length > 0 && (
+      <div style={{ marginBottom: 20 }}>
+        <InfoStrip tone="danger" title={`🚨 Critical Low Stock Warning (${criticalItems.length} yarn item${criticalItems.length > 1 ? "s" : ""})`}>
+          Immediate action required! The following raw materials are below their minimum safety thresholds. Production orders requiring these yarns are at risk of stoppage:
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12, marginTop: 12 }}>
+            {criticalItems.map((item) => {
+              const deficit = new Decimal(item.reorderLevel).minus(item.available).toFixed(1);
+              return (
+                <div key={item.id} style={{ background: "#fff", padding: "12px 14px", borderRadius: 8, border: "1px solid #e5a4a4", display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <strong className="code" style={{ fontSize: 13 }}>{item.code}</strong>
+                    <StatusBadge status="HIGH" label="Below Reorder Level" />
+                  </div>
+                  <span className="cell-secondary" style={{ fontSize: 12 }}>{item.description} ({item.colour})</span>
+                  <div style={{ fontSize: 12, display: "flex", justifyContent: "space-between", margin: "4px 0" }}>
+                    <span>Available: <strong style={{ color: "var(--madder)" }}>{formatQty(item.available, item.unit, 1)}</strong></span>
+                    <span>Safety min: <strong>{formatQty(item.reorderLevel, item.unit, 1)}</strong></span>
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--madder)", fontWeight: 700 }}>
+                    Deficit: -{deficit} {item.unit} to reach safe stock level
+                  </div>
+                  <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                    {hasPermission(user, "inventory.receive") && (
+                      <Link className="btn btn--primary btn--sm" href={`/inventory/receive?item=${item.code}&needed=${deficit}`} style={{ flex: 1, justifyContent: "center" }}>
+                        <PackagePlus size={12}/> Reorder {deficit} {item.unit}
+                      </Link>
+                    )}
+                    <button type="button" className="btn btn--secondary btn--sm" onClick={() => { setEditingItem(item); setNewReorderLevel(item.reorderLevel); }}>
+                      Edit Min
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </InfoStrip>
       </div>
     )}
+
+    {approachingItems.length > 0 && criticalItems.length === 0 && (
+      <div style={{ marginBottom: 20 }}>
+        <InfoStrip tone="warning" title="Stock Approaching Reorder Threshold">
+          {approachingItems.length} yarn {approachingItems.length === 1 ? 'item is' : 'items are'} within 25% of their reorder levels: <strong>{approachingItems.map(i => `${i.code} (${formatQty(i.available, i.unit, 1)} left)`).join(", ")}</strong>. Plan purchase orders before stock drops further.
+        </InfoStrip>
+      </div>
+    )}
+
+    {editingItem && (
+      <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+        <form onSubmit={handleSaveReorder} style={{ background: "#fff", padding: 24, borderRadius: 10, maxWidth: 420, width: "90%", boxShadow: "0 10px 30px rgba(0,0,0,0.2)" }}>
+          <h3 style={{ margin: "0 0 8px 0" }}>Adjust Safety Reorder Level</h3>
+          <p className="cell-secondary" style={{ marginBottom: 16 }}>Set minimum stock threshold for <strong>{editingItem.code}</strong> ({editingItem.description}). A warning will fire whenever available stock drops below this number.</p>
+          <Field label={`Minimum Reorder Threshold (${editingItem.unit})`}>
+            <TextInput type="number" step="1" required value={newReorderLevel} onChange={(e) => setNewReorderLevel(e.target.value)} />
+          </Field>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+            <Button type="button" variant="secondary" onClick={() => setEditingItem(null)}>Cancel</Button>
+            <Button type="submit" variant="primary" disabled={savingReorder}>{savingReorder ? "Saving..." : "Save Threshold"}</Button>
+          </div>
+        </form>
+      </div>
+    )}
+
     <div className="stat-grid"><div className="stat-card stat-card--cotton"><div className="stat-card__top">On hand · by unit</div><strong>{totalFor("onHand")}</strong><div className="stat-card__bottom">physical accepted + held</div></div><div className="stat-card stat-card--indigo"><div className="stat-card__top">Reserved · by unit</div><strong>{totalFor("reserved")}</strong><div className="stat-card__bottom">linked to plans</div></div><div className="stat-card stat-card--neem"><div className="stat-card__top">Available · by unit</div><strong>{totalFor("available")}</strong><div className="stat-card__bottom">usable for new plans</div></div><div className="stat-card stat-card--turmeric"><div className="stat-card__top">Held · by unit</div><strong>{totalFor("held")}</strong><div className="stat-card__bottom">not available to reserve</div></div></div>
     <div className="filter-row"><label className="search-box"><Search size={14}/><input aria-label="Search yarn items" placeholder="Search code, description, colour…" value={query} onChange={(event) => setQuery(event.target.value)}/></label><LinkButton href="/inventory/reservations" variant="secondary" size="sm">Reservations</LinkButton>{hasPermission(user, "inventory.adjust_request") && <LinkButton href="/inventory/adjustments" variant="secondary" size="sm">Adjustment requests</LinkButton>}</div>
-    <Card title="Yarn items" action={<Tag>{filtered.length} items</Tag>}><DataTable headers={["Code / description", "Colour", "On hand", "Reserved", "Available", "Held", "Reorder", "Batches"]} rows={filtered.map((item) => { const low = new Decimal(item.available).lt(item.reorderLevel); const approaching = !low && new Decimal(item.available).lte(new Decimal(item.reorderLevel).mul(1.2)); const batches = data.yarnBatches.filter((batch) => batch.itemCode === item.code); return [<div><span className="cell-primary code">{item.code}</span><span className="cell-secondary">{item.description}</span></div>, item.colour, <span className="num">{formatQty(item.onHand, item.unit, 1)}</span>, <span className="num">{formatQty(item.reserved, item.unit, 1)}</span>, <span className="num" style={{ color: low ? "var(--madder)" : approaching ? "var(--turmeric)" : "inherit", fontWeight: (low || approaching) ? 900 : 700 }}>{formatQty(item.available, item.unit, 1)}</span>, <span className="num">{formatQty(item.held, item.unit, 1)}</span>, <div><span className="num">{formatQty(item.reorderLevel, item.unit, 1)}</span>{low ? <div><StatusBadge status="HIGH" label="Below reorder"/></div> : approaching ? <div><StatusBadge status="PENDING" label="Approaching"/></div> : null}</div>, <Link className="btn btn--quiet btn--sm" href={`/inventory/batches/${batches[0]?.id ?? "batch-01"}`}>{batches.length} lots <ArrowRight size={12}/></Link>]; })} empty={<EmptyState title="No yarn item matches" detail="Adjust the search phrase."/>}/></Card>
+    <Card title="Raw material items" action={<Tag>{filtered.length} items</Tag>}><DataTable headers={["Code / description", "Colour", "On hand", "Reserved", "Available", "Held", "Safety Reorder", "Status", "Actions"]} rows={filtered.map((item) => { const low = new Decimal(item.available).lt(item.reorderLevel); const approaching = !low && new Decimal(item.available).lte(new Decimal(item.reorderLevel).mul(1.25)); const batches = data.yarnBatches.filter((batch) => batch.itemCode === item.code); return [<div><span className="cell-primary code">{item.code}</span><span className="cell-secondary">{item.description}</span></div>, item.colour, <span className="num">{formatQty(item.onHand, item.unit, 1)}</span>, <span className="num">{formatQty(item.reserved, item.unit, 1)}</span>, <span className="num" style={{ color: low ? "var(--madder)" : approaching ? "var(--turmeric)" : "inherit", fontWeight: (low || approaching) ? 900 : 700 }}>{formatQty(item.available, item.unit, 1)}</span>, <span className="num">{formatQty(item.held, item.unit, 1)}</span>, <div><span className="num">{formatQty(item.reorderLevel, item.unit, 1)}</span></div>, <div>{low ? <StatusBadge status="HIGH" label="Below reorder"/> : approaching ? <StatusBadge status="PENDING" label="Approaching"/> : <StatusBadge status="AVAILABLE" label="Healthy"/>}</div>, <div style={{ display: "flex", gap: 6, alignItems: "center" }}><Link className="btn btn--quiet btn--sm" href={`/inventory/batches/${batches[0]?.id ?? "batch-01"}`}>{batches.length} lots</Link>{hasPermission(user, "inventory.receive") && <Link className="btn btn--secondary btn--sm" href={`/inventory/receive?item=${item.code}`}>Reorder</Link>}<button type="button" className="btn btn--quiet btn--sm" onClick={() => { setEditingItem(item); setNewReorderLevel(item.reorderLevel); }}>Set Min</button></div>]; })} empty={<EmptyState title="No yarn item matches" detail="Adjust the search phrase."/>}/></Card>
     {hasPermission(user, "inventory.adjust_approve") && (
       <Card title="WIP (Work In Progress) Buffer Zones" action={<Tag>Live factory floor</Tag>}>
         <div className="stat-grid" style={{ padding: "16px" }}>
@@ -89,6 +173,32 @@ function YarnReceiptPage() {
   const [busy, setBusy] = useState(false);
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const canReceive = hasPermission(user, "inventory.receive");
+
+  // Read search params if reordering a specific item
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const itemParam = params.get("item");
+    const neededParam = params.get("needed");
+    if (itemParam) {
+      const targetItem = data.yarnItems.find(i => i.code === itemParam);
+      const qty = neededParam || "500.000";
+      setLines([{
+        id: "line-1",
+        itemCode: itemParam,
+        docketQty: qty,
+        received: qty,
+        accepted: qty,
+        damaged: "0",
+        held: "0",
+        unitCost: itemParam.includes("SILK") ? "650.00" : itemParam.includes("COT") ? "240.00" : "185.00",
+        acceptedManual: false
+      }]);
+      setSupplier(itemParam.includes("SILK") ? "Mysore Silk Weavers Co." : itemParam.includes("COT") ? "Vardhman Textiles" : "Reliance Industries");
+      setSupplierLot(`LOT-${Math.floor(Math.random() * 8999 + 1000)}`);
+      setLocation("Aisle A-01 · Rack 1");
+    }
+  }, [data.yarnItems]);
 
   const validation = lines.map((line) => {
     const item = data.yarnItems.find((candidate) => candidate.code === line.itemCode);

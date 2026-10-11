@@ -62,10 +62,19 @@ export function DispatchFulfillmentPage() {
     new Date().toISOString().slice(0, 16)
   );
 
-  // Generated invoice state for Step 3
   const [generatedInvoiceNo, setGeneratedInvoiceNo] = useState("");
   const [generatedGatePassNo, setGeneratedGatePassNo] = useState("");
   const [completedOrderIds, setCompletedOrderIds] = useState<string[]>([]);
+
+  // Document viewing state
+  const [viewingDocument, setViewingDocument] = useState<{
+    type: "invoice" | "gatePass" | "manifest";
+    order: Order;
+    rolls: FabricRoll[];
+    invoiceNo?: string;
+    gatePassNo?: string;
+  } | null>(null);
+
 
   // Pending orders: orders with accepted rolls or ready for dispatch
   const pendingOrders = data.orders.filter(
@@ -130,126 +139,15 @@ export function DispatchFulfillmentPage() {
   };
 
   const handleDownloadLoadingManifest = (order: Order, rolls: FabricRoll[]) => {
-    const totalMeters = rolls.reduce((sum, r) => sum.plus(r.qty), new Decimal(0));
-    const content = `======================================================================
-EVEREST TEXTILE MILLS - WAREHOUSE LOADING MANIFEST
-======================================================================
-Manifest Date: ${formatDate(new Date().toISOString())}
-Order Reference: ${order.code}
-Buyer Consignee: ${order.buyer}
-Product: ${order.product} (Shade: ${order.colour})
-
-ROLL LOADING CHECKLIST & WAREHOUSE LOCATIONS:
-----------------------------------------------------------------------
-${rolls.map((r, i) => `${i + 1}. [ ] ${r.code.padEnd(16)} | Qty: ${formatQty(r.qty, r.unit, 1).padEnd(10)} | Dye Lot: ${r.dyeLot.padEnd(8)} | Location: ${r.location.padEnd(10)} | QC: ${r.dispatchQcPassed ? "PASSED" : "PRE-CHECKED"}`).join("\n")}
-----------------------------------------------------------------------
-TOTAL ROLLS TO LOAD: ${rolls.length} Rolls
-TOTAL NET QUANTITY: ${formatQty(totalMeters.toString(), order.unit, 1)}
-
-LOADER INSTRUCTIONS:
-1. Ensure all moisture bags are sealed and clean.
-2. Verify roll barcodes match this outward manifest before forklift loading.
-3. Obtain forklift operator sign-off prior to bay departure.
-
-Authorized Loading Supervisor: ${user?.name ?? "Sameer Khan"}
-Everest Textile Mills Ltd. - North Dispatch Bay
-======================================================================`;
-    handleDownload(`Loading_Manifest_${order.code}.txt`, content, "Loading Manifest");
+    setViewingDocument({ type: "manifest", order, rolls });
   };
 
-  const handleDownloadInvoice = (order: Order, rolls: FabricRoll[]) => {
-    const totalMeters = rolls.reduce((sum, r) => sum.plus(r.qty), new Decimal(0));
-    const ratePerMeter = new Decimal(order.revenue).div(order.ordered).toFixed(2);
-    const subtotal = totalMeters.mul(ratePerMeter);
-    const cgst = subtotal.mul(0.025);
-    const sgst = subtotal.mul(0.025);
-    const totalInvoice = subtotal.plus(cgst).plus(sgst);
-
-    const content = `======================================================================
-TAX INVOICE - EVEREST TEXTILE MILLS LTD.
-======================================================================
-Invoice Number: ${generatedInvoiceNo}
-Gate Pass Ref: ${generatedGatePassNo}
-Invoice Date: ${formatDate(new Date().toISOString())}
-Payment Terms: Net 30 Days
-
-SELLER:
-Everest Textile Mills Ltd.
-Plot 14-B, Industrial Textile Complex, North Shed
-GSTIN: 29AABCE4120L1ZA | PAN: AABCE4120L
-
-BUYER / BILL TO:
-${order.buyer}
-Purchase Order Ref: ${order.code}
-Destination Warehouse: Central Hub
-GSTIN: 29AAACT9812K1Z9
-
-TRANSPORT & LOGISTICS:
-----------------------------------------------------------------------
-Transport Agency: ${transportAgency}
-Vehicle License Plate: ${licensePlate}
-Driver Name & Contact: ${driverName} (${driverPhone})
-Government E-Way Bill: ${ewayBillNumber}
-Gate Departure Slot: ${formatDateTime(plannedDeparture)}
-
-LINE ITEMS:
-----------------------------------------------------------------------
-Item Description: ${order.product} - ${order.colour}
-HSN Code: 5208 (Woven Cotton Fabrics)
-Total Quantity: ${formatQty(totalMeters.toString(), order.unit, 1)} (${rolls.length} Rolls)
-Unit Rate: INR ${ratePerMeter} / ${order.unit}
-
-FINANCIAL BREAKDOWN:
-----------------------------------------------------------------------
-Taxable Subtotal: INR ${subtotal.toFixed(2)}
-CGST (2.5%): INR ${cgst.toFixed(2)}
-SGST (2.5%): INR ${sgst.toFixed(2)}
-TOTAL INVOICE VALUE: INR ${totalInvoice.toFixed(2)}
-
-SECURITY GATE VERIFICATION:
-Vehicle weighed & outward physical seal applied.
-Dispatch Officer: ${user?.name ?? "Sameer Khan"}
-Driver Signature: _______________________
-======================================================================`;
-    handleDownload(`Tax_Invoice_${generatedInvoiceNo}.txt`, content, "Tax Invoice");
+  const handleDownloadInvoice = (order: Order, rolls: FabricRoll[], invoiceNo?: string, gatePassNo?: string) => {
+    setViewingDocument({ type: "invoice", order, rolls, invoiceNo: invoiceNo || generatedInvoiceNo || `INV-2026-${order.code.slice(-4)}`, gatePassNo: gatePassNo || generatedGatePassNo || `GP-2026-${order.code.slice(-4)}` });
   };
 
-  const handleDownloadGatePass = (order: Order, rolls: FabricRoll[]) => {
-    const totalMeters = rolls.reduce((sum, r) => sum.plus(r.qty), new Decimal(0));
-    const content = `======================================================================
-OUTWARD VEHICLE GATE PASS - SECURITY RECORD
-======================================================================
-Gate Pass Number: ${generatedGatePassNo}
-Linked Invoice: ${generatedInvoiceNo}
-Date & Time: ${formatDateTime(plannedDeparture)}
-Dispatch Gate: North Main Outward Gate 2
-
-VEHICLE & DRIVER CREDENTIALS:
-----------------------------------------------------------------------
-Transport Agency: ${transportAgency}
-Vehicle Number Plate: ${licensePlate}
-Driver Name: ${driverName}
-Driver Phone: ${driverPhone}
-E-Way Bill Number: ${ewayBillNumber}
-
-CARGO MANIFEST:
-----------------------------------------------------------------------
-Consignee / Buyer: ${order.buyer}
-Purchase Order: ${order.code}
-Commodity: Finished Woven Fabric Rolls (${order.product})
-Total Package Count: ${rolls.length} Rolls
-Total Net Meters: ${formatQty(totalMeters.toString(), order.unit, 1)}
-
-SECURITY CHECKS:
-[X] Driver identity and driving license physically verified.
-[X] Vehicle number plate matches E-Way Bill declaration.
-[X] Cargo tarpaulin and container seal applied.
-[X] Gate weighbridge gross weight logged.
-
-Authorized Security Officer: ___________________
-Dispatch Officer Sign: ${user?.name ?? "Sameer Khan"}
-======================================================================`;
-    handleDownload(`Gate_Pass_${generatedGatePassNo}.txt`, content, "Vehicle Gate Pass");
+  const handleDownloadGatePass = (order: Order, rolls: FabricRoll[], invoiceNo?: string, gatePassNo?: string) => {
+    setViewingDocument({ type: "gatePass", order, rolls, invoiceNo: invoiceNo || generatedInvoiceNo || `INV-2026-${order.code.slice(-4)}`, gatePassNo: gatePassNo || generatedGatePassNo || `GP-2026-${order.code.slice(-4)}` });
   };
 
   const handleConfirmFulfillment = async () => {
@@ -582,8 +480,8 @@ Dispatch Officer Sign: ${user?.name ?? "Sameer Khan"}
                       className="btn btn--secondary btn--sm"
                       onClick={() => {
                         const fakeOrder = data.orders.find((o) => o.code === shipment.orderCode) ?? data.orders[0];
-                        const fakeRolls = data.rolls.slice(0, shipment.rolls);
-                        handleDownloadInvoice(fakeOrder, fakeRolls);
+                        const fakeRolls = data.rolls.filter((r) => shipment.rollIds?.includes(r.id)).slice(0, shipment.rolls);
+                        handleDownloadInvoice(fakeOrder, fakeRolls.length ? fakeRolls : data.rolls.slice(0, shipment.rolls), shipment.invoice ?? undefined);
                       }}
                     >
                       <Download size={13} /> Invoice
@@ -593,8 +491,8 @@ Dispatch Officer Sign: ${user?.name ?? "Sameer Khan"}
                       className="btn btn--secondary btn--sm"
                       onClick={() => {
                         const fakeOrder = data.orders.find((o) => o.code === shipment.orderCode) ?? data.orders[0];
-                        const fakeRolls = data.rolls.slice(0, shipment.rolls);
-                        handleDownloadGatePass(fakeOrder, fakeRolls);
+                        const fakeRolls = data.rolls.filter((r) => shipment.rollIds?.includes(r.id)).slice(0, shipment.rolls);
+                        handleDownloadGatePass(fakeOrder, fakeRolls.length ? fakeRolls : data.rolls.slice(0, shipment.rolls), shipment.invoice ?? undefined);
                       }}
                     >
                       <FileCheck size={13} /> Gate Pass
@@ -1033,7 +931,7 @@ Dispatch Officer Sign: ${user?.name ?? "Sameer Khan"}
                   </div>
                 </div>
 
-                {/* Download and Print Actions */}
+                {/* View and Print Actions */}
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "flex-end" }}>
                   <button
                     type="button"
@@ -1045,7 +943,7 @@ Dispatch Officer Sign: ${user?.name ?? "Sameer Khan"}
                       )
                     }
                   >
-                    <Download size={13} /> Download Invoice (.txt)
+                    <FileText size={13} /> View Tax Invoice
                   </button>
                   <button
                     type="button"
@@ -1057,7 +955,7 @@ Dispatch Officer Sign: ${user?.name ?? "Sameer Khan"}
                       )
                     }
                   >
-                    <Download size={13} /> Download Gate Pass (.txt)
+                    <FileCheck size={13} /> View Gate Pass
                   </button>
                   <button
                     type="button"
@@ -1087,6 +985,192 @@ Dispatch Officer Sign: ${user?.name ?? "Sameer Khan"}
                     <CheckCircle2 size={18} /> Confirm & Complete Dispatch
                   </button>
                 </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* DOCUMENT PREVIEW MODAL */}
+      {viewingDocument && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1000,
+            backgroundColor: "rgba(25, 27, 25, 0.7)",
+            backdropFilter: "blur(4px)",
+            display: "grid",
+            placeItems: "center",
+            padding: 20,
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: "var(--white)",
+              border: "1px solid var(--line-dark)",
+              boxShadow: "0 10px 30px rgba(0,0,0,0.1)",
+              maxWidth: 800,
+              width: "100%",
+              maxHeight: "90vh",
+              overflowY: "auto",
+              padding: 40,
+              position: "relative",
+            }}
+          >
+            <div style={{ position: "absolute", top: 20, right: 20, display: "flex", gap: 8 }} className="no-print">
+              <button className="btn btn--secondary btn--sm" onClick={() => window.print()}>
+                <Printer size={16} /> Print
+              </button>
+              <button className="icon-button" onClick={() => setViewingDocument(null)}>
+                <X size={20} />
+              </button>
+            </div>
+
+            {viewingDocument.type === "invoice" && (
+              <div style={{ color: "var(--ink)" }}>
+                <div style={{ borderBottom: "2px solid var(--ink)", paddingBottom: 20, marginBottom: 20 }}>
+                  <h1 style={{ margin: 0, fontSize: 28, fontWeight: 900 }}>TAX INVOICE</h1>
+                  <h2 style={{ margin: "4px 0 0", fontSize: 16, color: "var(--ink-soft)" }}>EVEREST TEXTILE MILLS LTD.</h2>
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 30 }}>
+                  <div>
+                    <p style={{ margin: "0 0 4px", fontWeight: 700 }}>SELLER:</p>
+                    <p style={{ margin: 0, fontSize: 14 }}>Everest Textile Mills Ltd.</p>
+                    <p style={{ margin: 0, fontSize: 14 }}>Plot 14-B, Industrial Textile Complex</p>
+                    <p style={{ margin: 0, fontSize: 14 }}>GSTIN: 29AABCE4120L1ZA</p>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <p style={{ margin: "0 0 4px", fontSize: 14 }}>Invoice Number: <strong style={{ fontSize: 16 }}>{viewingDocument.invoiceNo}</strong></p>
+                    <p style={{ margin: "0 0 4px", fontSize: 14 }}>Date: <strong>{formatDate(new Date().toISOString())}</strong></p>
+                    <p style={{ margin: "0 0 4px", fontSize: 14 }}>Gate Pass Ref: <strong>{viewingDocument.gatePassNo}</strong></p>
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: 30 }}>
+                  <p style={{ margin: "0 0 4px", fontWeight: 700 }}>BILL TO:</p>
+                  <p style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>{viewingDocument.order.buyer}</p>
+                  <p style={{ margin: 0, fontSize: 14 }}>PO Ref: {viewingDocument.order.code}</p>
+                  <p style={{ margin: 0, fontSize: 14 }}>Destination: Central Hub</p>
+                </div>
+
+                <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 30 }}>
+                  <thead>
+                    <tr style={{ borderBottom: "1px solid var(--ink)", backgroundColor: "var(--cotton)", textAlign: "left" }}>
+                      <th style={{ padding: 12 }}>Description</th>
+                      <th style={{ padding: 12 }}>HSN</th>
+                      <th style={{ padding: 12 }}>Qty</th>
+                      <th style={{ padding: 12 }}>Unit Rate</th>
+                      <th style={{ padding: 12, textAlign: "right" }}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(() => {
+                      const order = viewingDocument.order;
+                      const rolls = viewingDocument.rolls;
+                      const totalMeters = rolls.reduce((sum, r) => sum.plus(r.qty), new Decimal(0));
+                      const ratePerMeter = new Decimal(order.revenue).div(order.ordered);
+                      const subtotal = totalMeters.mul(ratePerMeter);
+                      const cgst = subtotal.mul(0.025);
+                      const sgst = subtotal.mul(0.025);
+                      const totalInvoice = subtotal.plus(cgst).plus(sgst);
+
+                      return (
+                        <>
+                          <tr style={{ borderBottom: "1px solid var(--line)" }}>
+                            <td style={{ padding: 12 }}>
+                              <strong style={{ display: "block" }}>{order.product}</strong>
+                              <span style={{ fontSize: 12, color: "var(--ink-soft)" }}>Shade: {order.colour} ({rolls.length} Rolls)</span>
+                            </td>
+                            <td style={{ padding: 12 }}>5208</td>
+                            <td style={{ padding: 12 }}>{formatQty(totalMeters.toString(), order.unit, 1)}</td>
+                            <td style={{ padding: 12 }}>INR {ratePerMeter.toFixed(2)}</td>
+                            <td style={{ padding: 12, textAlign: "right" }}>INR {subtotal.toFixed(2)}</td>
+                          </tr>
+                          <tr>
+                            <td colSpan={3}></td>
+                            <td style={{ padding: 12, textAlign: "right", fontWeight: 700 }}>Taxable Subtotal</td>
+                            <td style={{ padding: 12, textAlign: "right", fontWeight: 700 }}>INR {subtotal.toFixed(2)}</td>
+                          </tr>
+                          <tr>
+                            <td colSpan={3}></td>
+                            <td style={{ padding: 12, textAlign: "right", color: "var(--ink-soft)" }}>CGST (2.5%)</td>
+                            <td style={{ padding: 12, textAlign: "right", color: "var(--ink-soft)" }}>INR {cgst.toFixed(2)}</td>
+                          </tr>
+                          <tr>
+                            <td colSpan={3}></td>
+                            <td style={{ padding: 12, textAlign: "right", color: "var(--ink-soft)" }}>SGST (2.5%)</td>
+                            <td style={{ padding: 12, textAlign: "right", color: "var(--ink-soft)" }}>INR {sgst.toFixed(2)}</td>
+                          </tr>
+                          <tr style={{ backgroundColor: "var(--cotton-2)" }}>
+                            <td colSpan={3}></td>
+                            <td style={{ padding: "16px 12px", textAlign: "right", fontWeight: 900, fontSize: 16 }}>GRAND TOTAL</td>
+                            <td style={{ padding: "16px 12px", textAlign: "right", fontWeight: 900, fontSize: 16 }}>INR {totalInvoice.toFixed(2)}</td>
+                          </tr>
+                        </>
+                      );
+                    })()}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {viewingDocument.type === "gatePass" && (
+              <div style={{ color: "var(--ink)" }}>
+                <div style={{ borderBottom: "2px solid var(--ink)", paddingBottom: 20, marginBottom: 20 }}>
+                  <h1 style={{ margin: 0, fontSize: 24, fontWeight: 900 }}>OUTWARD VEHICLE GATE PASS</h1>
+                  <h2 style={{ margin: "4px 0 0", fontSize: 16, color: "var(--ink-soft)" }}>EVEREST TEXTILE MILLS LTD.</h2>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 30 }}>
+                  <div>
+                    <p style={{ margin: "0 0 4px", fontSize: 14 }}>Gate Pass: <strong>{viewingDocument.gatePassNo}</strong></p>
+                    <p style={{ margin: "0 0 4px", fontSize: 14 }}>Invoice Ref: <strong>{viewingDocument.invoiceNo}</strong></p>
+                    <p style={{ margin: "0 0 4px", fontSize: 14 }}>Date: <strong>{formatDate(new Date().toISOString())}</strong></p>
+                  </div>
+                  <div>
+                    <p style={{ margin: "0 0 4px", fontSize: 14 }}>Buyer: <strong>{viewingDocument.order.buyer}</strong></p>
+                    <p style={{ margin: "0 0 4px", fontSize: 14 }}>Total Rolls: <strong>{viewingDocument.rolls.length}</strong></p>
+                    <p style={{ margin: "0 0 4px", fontSize: 14 }}>Total Qty: <strong>{formatQty(viewingDocument.rolls.reduce((s, r) => s.plus(r.qty), new Decimal(0)).toString(), viewingDocument.order.unit, 1)}</strong></p>
+                  </div>
+                </div>
+                <p style={{ fontSize: 14, fontStyle: "italic", border: "1px solid var(--line)", padding: 12 }}>Security Checks: Driver identity verified. Cargo tarpaulin sealed. Gross weight logged.</p>
+                <div style={{ marginTop: 60, display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ borderTop: "1px solid var(--ink)", paddingTop: 8, fontSize: 14 }}>Security Officer Sign</span>
+                  <span style={{ borderTop: "1px solid var(--ink)", paddingTop: 8, fontSize: 14 }}>Dispatch Officer Sign</span>
+                </div>
+              </div>
+            )}
+            
+            {viewingDocument.type === "manifest" && (
+              <div style={{ color: "var(--ink)" }}>
+                <div style={{ borderBottom: "2px solid var(--ink)", paddingBottom: 20, marginBottom: 20 }}>
+                  <h1 style={{ margin: 0, fontSize: 24, fontWeight: 900 }}>WAREHOUSE LOADING MANIFEST</h1>
+                </div>
+                <p style={{ margin: "0 0 4px", fontSize: 14 }}>Order: <strong>{viewingDocument.order.code}</strong></p>
+                <p style={{ margin: "0 0 20px", fontSize: 14 }}>Consignee: <strong>{viewingDocument.order.buyer}</strong></p>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr style={{ borderBottom: "1px solid var(--ink)", textAlign: "left" }}>
+                      <th style={{ padding: 8 }}>Roll Code</th>
+                      <th style={{ padding: 8 }}>Qty</th>
+                      <th style={{ padding: 8 }}>Dye Lot</th>
+                      <th style={{ padding: 8 }}>Location</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {viewingDocument.rolls.map((r, i) => (
+                      <tr key={r.id} style={{ borderBottom: "1px solid var(--line)" }}>
+                        <td style={{ padding: 8, fontFamily: "monospace" }}>[ ] {r.code}</td>
+                        <td style={{ padding: 8 }}>{formatQty(r.qty, r.unit, 1)}</td>
+                        <td style={{ padding: 8 }}>{r.dyeLot}</td>
+                        <td style={{ padding: 8 }}>{r.location}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>

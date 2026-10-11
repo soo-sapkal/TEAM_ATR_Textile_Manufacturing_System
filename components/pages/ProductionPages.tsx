@@ -4,7 +4,7 @@
 
 import { RoleLink as Link } from "@/components/ui/primitives";
 import { useState, useEffect, type FormEvent } from "react";
-import { Activity, ArrowLeft, ArrowRight, Check, Factory, FileClock, Pause, Play, ShieldAlert, Wrench, X } from "lucide-react";
+import { Activity, ArrowLeft, ArrowRight, Check, CheckCircle2, Clock, Calendar, Factory, FileClock, Pause, Play, ShieldAlert, Sparkles, Wrench, X, AlertCircle } from "lucide-react";
 import Decimal from "decimal.js";
 import { useDemo } from "@/lib/demo/context";
 import { hasPermission, DEMO_USERS } from "@/lib/auth/permissions";
@@ -28,6 +28,7 @@ function ProductionBoard() {
   const { data } = useDemo();
   const [currentDate, setCurrentDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedOrderCode, setSelectedOrderCode] = useState<string | null>(null);
+  const [assignOperatorModal, setAssignOperatorModal] = useState<{ operatorName: string, shift: string } | null>(null);
 
   const shifts = ["A · 06:00–14:00", "B · 14:00–22:00", "C · 22:00–06:00"];
 
@@ -47,6 +48,7 @@ function ProductionBoard() {
     });
 
   return <>
+    {assignOperatorModal && <AssignTaskModal operatorName={assignOperatorModal.operatorName} shift={assignOperatorModal.shift} unassignedOps={unassignedOps} onClose={() => setAssignOperatorModal(null)} />}
     {selectedOrderCode && <OrderModal orderCode={selectedOrderCode} onClose={() => setSelectedOrderCode(null)} />}
     <PageHeader 
       eyebrow="Make & move · shop floor" 
@@ -71,7 +73,7 @@ function ProductionBoard() {
     </div>
     
     <div className="page-grid">
-      {shifts.map(shift => {
+      {shifts.map((shift, shiftIndex) => {
         const expectedShiftString = `${currentDate} | ${shift}`;
         // Support legacy assignment format where date isn't explicitly prepended if it's today
         const assignedOps = data.operations.filter(op => 
@@ -79,7 +81,23 @@ function ProductionBoard() {
           (op.shift === shift && currentDate === new Date().toISOString().split('T')[0])
         );
         
-        const machineOperators = DEMO_USERS.filter(u => u.roles.includes("MACHINE_OPERATOR"));
+        const machineOperators = DEMO_USERS.filter(u => u.roles.includes("MACHINE_OPERATOR")).filter((op, idx) => {
+          const operatorName = op.name.split(" (")[0];
+          
+          // 1. Are they assigned to THIS shift?
+          if (assignedOps.some(o => Array.isArray(o.operators) && o.operators.includes(operatorName))) return true;
+          
+          // 2. Are they assigned to ANY OTHER shift on this same date?
+          const isBusyToday = data.operations.some(o => 
+            Array.isArray(o.operators) && o.operators.includes(operatorName) && 
+            (o.shift?.startsWith(currentDate) || (o.shift && currentDate === new Date().toISOString().split('T')[0] && !o.shift.includes("|")))
+          );
+          if (isBusyToday) return false;
+          
+          // 3. If idle today, only show them in their assigned roster (e.g. index % 3)
+          return idx % 3 === shiftIndex;
+        });
+
         const accountedOpIds = new Set<string>();
 
         return (
@@ -88,7 +106,7 @@ function ProductionBoard() {
               <div className="stack-sm">
                 {machineOperators.map(operator => {
                   const operatorName = operator.name.split(" (")[0];
-                  const assignedOp = assignedOps.find(op => op.operators.includes(operatorName));
+                  const assignedOp = assignedOps.find(op => Array.isArray(op.operators) && op.operators.includes(operatorName));
 
                   if (assignedOp) {
                     accountedOpIds.add(assignedOp.id);
@@ -102,10 +120,10 @@ function ProductionBoard() {
                     );
                   } else {
                     return (
-                      <div key={operator.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: "8px 12px", background: "var(--color-bg)", borderRadius: 4, border: "1px dashed var(--color-border)" }}>
-                        <span style={{ fontSize: 13, color: "var(--color-secondary)" }}>👤</span>
-                        <span style={{ fontWeight: 600, fontSize: 13, flex: 1, color: "var(--color-secondary)" }}>{operatorName}</span>
-                        <Tag>Idle</Tag>
+                      <div key={operator.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: "8px 12px", background: "var(--paper)", borderRadius: 4, border: "1px dashed var(--line-dark)" }}>
+                        <span style={{ fontSize: 13, color: "var(--ink-soft)" }}>👤</span>
+                        <span style={{ fontWeight: 600, fontSize: 13, flex: 1, color: "var(--ink-soft)" }}>{operatorName}</span>
+                        <Button size="sm" variant="secondary" onClick={() => setAssignOperatorModal({ operatorName, shift: expectedShiftString })}>+ Assign</Button>
                       </div>
                     );
                   }
@@ -148,14 +166,14 @@ function ScheduledOperationCard({ operation, onOrderClick }: { operation: Operat
   const percent = new Decimal(operation.target).gt(0) ? Decimal.min(100, new Decimal(operation.good).div(operation.target).mul(100)).toNumber() : 0;
 
   return (
-    <article className="stage-card" style={{ padding: "12px", background: "var(--color-bg)" }}>
+    <article className="stage-card" style={{ padding: "12px", background: "var(--paper)" }}>
       <div className="stage-card__meta">
         <button style={{ background: "none", border: "none", padding: 0, textDecoration: "underline", cursor: "pointer", color: "inherit", fontWeight: 700 }} onClick={() => onOrderClick(operation.orderCode)}>
           {operation.orderCode}
         </button>
         <StatusBadge status={operation.status}/>
       </div>
-      <div style={{ margin: "8px 0", fontSize: 13, color: "var(--color-secondary)" }}>
+      <div style={{ margin: "8px 0", fontSize: 13, color: "var(--ink-soft)" }}>
         {order ? `${order.product} · ${order.colour}` : "Unknown Product"}
       </div>
       <div className="stage-card__meta" style={{ marginTop: 8 }}>
@@ -202,10 +220,10 @@ function OperationCard({ operation, onOrderClick }: { operation: Operation; onOr
   const isLarge = estimatedHours > 8;
   const [autoSplit, setAutoSplit] = useState(isLarge);
 
-  return <article className="stage-card"><div className="stage-card__meta"><span>{operation.code}</span><StatusBadge status={operation.status}/></div><h3>{operation.stage}</h3><div className="stage-card__meta"><span>{operation.machineCode ?? "Unassigned"}</span><span>{operation.shift ?? "Shift not assigned"}</span></div><p className="cell-secondary">{operation.operators.join(" · ") || "Operator not assigned"}</p><Meter value={operation.good} total={operation.target} label="Good output" tone={percent >= 100 ? "neem" : "indigo"}/><div style={{ display: "flex", justifyContent: "space-between", marginTop: 10 }}><span className="cell-secondary">Waste {formatQty(operation.waste, operation.unit, 1)} · Reject {formatQty(operation.reject, operation.unit, 1)}</span><Link className="btn btn--secondary btn--sm" href={`/production/operations/${operation.id}`}>Open console <ArrowRight size={12}/></Link></div>{canAssign && <div className="operation-assignment" style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 16 }}>
+  return <article className="stage-card"><div className="stage-card__meta"><span>{operation.code}</span><StatusBadge status={operation.status}/></div><h3>{operation.stage}</h3><div className="stage-card__meta"><span>{operation.machineCode ?? "Unassigned"}</span><span>{operation.shift ?? "Shift not assigned"}</span></div><p className="cell-secondary">{(Array.isArray(operation.operators) ? operation.operators : []).join(" · ") || "Operator not assigned"}</p><Meter value={operation.good} total={operation.target} label="Good output" tone={percent >= 100 ? "neem" : "indigo"}/><div style={{ display: "flex", justifyContent: "space-between", marginTop: 10 }}><span className="cell-secondary">Waste {formatQty(operation.waste, operation.unit, 1)} · Reject {formatQty(operation.reject, operation.unit, 1)}</span><Link className="btn btn--secondary btn--sm" href={`/production/operations/${operation.id}`}>Open console <ArrowRight size={12}/></Link></div>{canAssign && <div className="operation-assignment" style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 16 }}>
     
     <div style={{ padding: 12, background: "var(--indigo-soft)", borderRadius: 4, display: "flex", flexDirection: "column", gap: 4 }}>
-      <span style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>⏱️ Estimated time: {estimatedHours.toFixed(1)} hours <span style={{ fontWeight: 400, color: "var(--color-secondary)" }}>(@50 {operation.unit}/hr)</span></span>
+      <span style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>⏱️ Estimated time: {estimatedHours.toFixed(1)} hours <span style={{ fontWeight: 400, color: "var(--ink-soft)" }}>(@50 {operation.unit}/hr)</span></span>
       {isLarge && <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13 }}><input type="checkbox" checked={autoSplit} onChange={e => setAutoSplit(e.target.checked)} /> <span>Auto-split remaining {Math.max(0, estimatedHours - 8).toFixed(1)} hrs to next shift</span></label>}
     </div>
     
@@ -215,28 +233,815 @@ function OperationCard({ operation, onOrderClick }: { operation: Operation; onOr
 }
 
 function MyWorkPage() {
-  const { data, user, toast } = useDemo();
-  const assignedName = user?.name.split(" (")[0];
-  const ops = data.operations.filter((operation) => {
-    return Boolean(assignedName && operation.operators.includes(assignedName)) && !["COMPLETED", "CANCELLED"].includes(operation.status);
+  const { data, user, toast, loginAs } = useDemo();
+  const [liveOps, setLiveOps] = useState<import('@/lib/domain/types').Operation[]>([]);
+  const [loadingTasks, setLoadingTasks] = useState(true);
+  const [activeTab, setActiveTab] = useState<"active" | "completed" | "unassigned">("active");
+
+  // Selected operator for viewing/testing (defaults to current logged-in operator)
+  const defaultOpName = user?.name ? user.name.split(' (')[0] : "Ravi Kumar";
+  const [selectedOperator, setSelectedOperator] = useState<string>(defaultOpName);
+
+  // Modals
+  const [fillDetailsOp, setFillDetailsOp] = useState<Operation | null>(null);
+  const [markCompleteOp, setMarkCompleteOp] = useState<Operation | null>(null);
+
+  const refreshTasks = () => {
+    setLoadingTasks(true);
+    fetch('/api/production')
+      .then(r => r.json())
+      .then(res => {
+        if (res.success && res.data?.operations) {
+          setLiveOps(res.data.operations);
+        } else {
+          setLiveOps(data.operations);
+        }
+      })
+      .catch(() => setLiveOps(data.operations))
+      .finally(() => setLoadingTasks(false));
+  };
+
+  useEffect(() => {
+    refreshTasks();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Filter tasks for the selected operator
+  const myAssignedOps = liveOps.filter((operation) => {
+    const isAssigned = Array.isArray(operation.operators) && operation.operators.some(op => 
+      op.toLowerCase().includes(selectedOperator.toLowerCase()) || 
+      selectedOperator.toLowerCase().includes(op.toLowerCase())
+    );
+    return isAssigned;
   });
-  return <><PageHeader eyebrow="Floor view · assigned work" title={`Your work, ${user?.name.split(" ")[0] ?? "operator"}.`} description="Large-touch shift actions. No cost fields, no back-office clutter, and no pretend optimistic save." meta={<><Tag>TODAY'S SHIFT TASKS</Tag></>} /><div className="info-strip info-strip--warning"><ShieldAlert size={18}/><div><strong>Floor mode</strong><div>Native scroll and feedback-only motion. This list contains only operations assigned to your demo profile that you need to complete in this shift only.</div></div></div><div className="page-grid">{ops.map((operation) => { const machine = data.machines.find((candidate) => candidate.code === operation.machineCode); return <Card className="col-6" key={operation.id} title={operation.code} action={<StatusBadge status={operation.status}/>}><div className="stage-card__meta"><span>Order {operation.orderCode}</span><span>{operation.stage}</span></div><div style={{ font: "900 26px var(--font-display)", margin: "11px 0" }}>{formatQty(operation.good, operation.unit, 1)} <span className="field__hint">good output</span></div><div className="stage-card__meta"><span>{operation.machineCode ?? "Machine unassigned"}</span><span>{operation.shift ?? "No shift"}</span></div><Meter value={operation.good} total={operation.target} label="Shift target"/><div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}><LinkButton href={`/production/operations/${operation.id}`} variant="primary" size="lg"><Activity size={17}/> Log Production Details</LinkButton>{machine && <LinkButton href={`/machines/${machine.id}`} variant="secondary" size="lg"><Wrench size={17}/> Machine</LinkButton>}{machine && <Button variant="quiet" size="lg" onClick={async () => {
-  try {
-    const res = await fetch("/api/production/machine-status", {
-      method: "POST",
-      body: JSON.stringify({ machineId: machine.id, status: "BREAKDOWN", reason: "Operator reported breakdown from Floor View", actor: user?.name })
-    });
-    const outcome = await res.json();
-    if (outcome.success) {
-      toast("Breakdown Reported", `Supervisor alerted for ${machine.code} breakdown.`, "error");
-      setTimeout(() => window.location.reload(), 1500);
-    } else {
-      toast("Error", outcome.error, "error");
+
+  const activeOps = myAssignedOps.filter(op => ["IN_PROGRESS", "PLANNED", "PAUSED"].includes(op.status));
+  const completedOps = myAssignedOps.filter(op => op.status === "COMPLETED");
+
+  // Unassigned tasks available for claim in operator's section
+  const unassignedOps = liveOps.filter(op => 
+    !op.machineCode && ["PLANNED", "PAUSED"].includes(op.status) && 
+    (!op.operators || op.operators.length === 0)
+  );
+
+  const todayDateStr = new Date().toLocaleDateString("en-IN", {
+    weekday: "long",
+    day: "numeric",
+    month: "short",
+    year: "numeric"
+  });
+
+  const operatorPersonas = [
+    { name: "Ravi Kumar", stage: "SPINNING", roleLabel: "Spinning Operator (SPIN-01)" },
+    { name: "Suresh Patel", stage: "WEAVING", roleLabel: "Weaving Operator (WEAV-01)" },
+    { name: "Kavita Rao", stage: "DYEING", roleLabel: "Dyeing Operator (DYE-01)" },
+    { name: "Amit Sharma", stage: "SPINNING", roleLabel: "Spinning Operator 1" },
+  ];
+
+  return (
+    <>
+      {fillDetailsOp && (
+        <FillProductionModal
+          operation={fillDetailsOp}
+          onClose={() => setFillDetailsOp(null)}
+          onSuccess={() => {
+            setFillDetailsOp(null);
+            refreshTasks();
+          }}
+        />
+      )}
+
+      {markCompleteOp && (
+        <MarkCompleteModal
+          operation={markCompleteOp}
+          onClose={() => setMarkCompleteOp(null)}
+          onSuccess={() => {
+            setMarkCompleteOp(null);
+            refreshTasks();
+          }}
+        />
+      )}
+
+      <PageHeader
+        eyebrow="Shop Floor · Operator Console"
+        title="Today's Assigned Tasks"
+        description={`Day's production tasks for ${selectedOperator}. Record outputs, adjust machinery, and mark completions.`}
+        actions={
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#64748b" }}>Switch Operator:</span>
+            <select
+              value={selectedOperator}
+              onChange={(e) => setSelectedOperator(e.target.value)}
+              style={{
+                padding: "8px 12px",
+                borderRadius: "8px",
+                border: "2px solid #000",
+                fontWeight: 700,
+                background: "#fef08a",
+                cursor: "pointer"
+              }}
+            >
+              {operatorPersonas.map(p => (
+                <option key={p.name} value={p.name}>
+                  {p.name} ({p.stage})
+                </option>
+              ))}
+            </select>
+          </div>
+        }
+        meta={
+          <>
+            <Tag><Calendar size={13} style={{ marginRight: 4 }}/> {todayDateStr}</Tag>
+            <Tag><Clock size={13} style={{ marginRight: 4 }}/> SHIFT A · 06:00–14:00</Tag>
+            <Tag>OPERATOR: {selectedOperator.toUpperCase()}</Tag>
+          </>
+        }
+      />
+
+      {/* Tabs */}
+      <div className="filter-row production-view-tabs" style={{ marginBottom: 20 }}>
+        <button
+          className={`filter-chip ${activeTab === "active" ? "filter-chip--active" : ""}`}
+          onClick={() => setActiveTab("active")}
+          style={{ display: "flex", alignItems: "center", gap: 8 }}
+        >
+          <Activity size={15}/> Today's Active Tasks ({activeOps.length})
+        </button>
+        <button
+          className={`filter-chip ${activeTab === "completed" ? "filter-chip--active" : ""}`}
+          onClick={() => setActiveTab("completed")}
+          style={{ display: "flex", alignItems: "center", gap: 8 }}
+        >
+          <CheckCircle2 size={15}/> Completed Today ({completedOps.length})
+        </button>
+        <button
+          className={`filter-chip ${activeTab === "unassigned" ? "filter-chip--active" : ""}`}
+          onClick={() => setActiveTab("unassigned")}
+          style={{ display: "flex", alignItems: "center", gap: 8 }}
+        >
+          <Sparkles size={15}/> Available to Claim ({unassignedOps.length})
+        </button>
+      </div>
+
+      {loadingTasks && (
+        <div className="info-strip" style={{ marginBottom: 20 }}>
+          <Activity size={18}/>
+          <div><strong>Loading tasks…</strong><div>Fetching live assignment records from Supabase database.</div></div>
+        </div>
+      )}
+
+      {/* ACTIVE TASKS TAB */}
+      {activeTab === "active" && !loadingTasks && (
+        <>
+          {activeOps.length === 0 ? (
+            <div className="page-grid">
+              <div className="col-12">
+                <EmptyState
+                  title="No active tasks assigned for today"
+                  detail={`No pending operations are currently assigned to ${selectedOperator} for today's shift. You can claim an unassigned task from the Available tab, or select another operator persona.`}
+                  action={
+                    <Button variant="primary" onClick={() => setActiveTab("unassigned")}>
+                      <Sparkles size={16}/> Browse Unassigned Tasks
+                    </Button>
+                  }
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="page-grid">
+              {activeOps.map((op) => {
+                const machine = data.machines.find(m => m.code === op.machineCode);
+                const progressPct = new Decimal(op.target || 1).gt(0) 
+                  ? Math.min(100, Math.round(new Decimal(op.good || 0).div(op.target).mul(100).toNumber()))
+                  : 0;
+
+                return (
+                  <Card
+                    className="col-6"
+                    key={op.id}
+                    title={op.code}
+                    action={
+                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        <Tag>{op.stage}</Tag>
+                        <StatusBadge status={op.status}/>
+                      </div>
+                    }
+                  >
+                    <div className="stage-card__meta" style={{ marginBottom: 12 }}>
+                      <span><strong>Order:</strong> {op.orderCode}</span>
+                      <span><strong>Shift:</strong> {op.shift || "Today · Shift A"}</span>
+                    </div>
+
+                    <div style={{
+                      padding: "12px",
+                      background: "#f8fafc",
+                      border: "2px solid #e2e8f0",
+                      borderRadius: "8px",
+                      marginBottom: 16
+                    }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+                        <div>
+                          <span style={{ fontSize: "1.75rem", fontWeight: 900, fontFamily: "var(--font-display)" }}>
+                            {formatQty(op.good, op.unit, 1)}
+                          </span>
+                          <span style={{ fontSize: "0.85rem", color: "#64748b", marginLeft: 6 }}>
+                            / {formatQty(op.target, op.unit, 0)} target
+                          </span>
+                        </div>
+                        <span style={{
+                          fontWeight: 800,
+                          fontSize: "1.1rem",
+                          color: progressPct >= 100 ? "#059669" : "#2563eb"
+                        }}>
+                          {progressPct}% Done
+                        </span>
+                      </div>
+                      <Meter value={op.good} total={op.target} label="Production Completion"/>
+                      
+                      <div style={{ display: "flex", gap: 16, marginTop: 10, fontSize: "0.85rem", color: "#475569" }}>
+                        <span>Waste: <strong>{formatQty(op.waste || 0, op.unit, 1)}</strong></span>
+                        <span>Reject: <strong>{formatQty(op.reject || 0, op.unit, 1)}</strong></span>
+                        <span>Machine: <strong>{op.machineCode || "Unassigned"}</strong> {machine && `(${machine.status})`}</span>
+                      </div>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+                      <Button
+                        variant="primary"
+                        size="lg"
+                        style={{ background: "#2563eb", color: "#fff", borderColor: "#000" }}
+                        onClick={() => setFillDetailsOp(op)}
+                      >
+                        <Activity size={17}/> Fill Production Details
+                      </Button>
+
+                      <Button
+                        variant="secondary"
+                        size="lg"
+                        style={{ background: "#10b981", color: "#fff", borderColor: "#000" }}
+                        onClick={() => setMarkCompleteOp(op)}
+                      >
+                        <CheckCircle2 size={17}/> Mark Complete
+                      </Button>
+
+                      {op.status === "IN_PROGRESS" ? (
+                        <Button
+                          variant="secondary"
+                          size="lg"
+                          onClick={async () => {
+                            try {
+                              const res = await fetch("/api/production/operation-transition", {
+                                method: "POST",
+                                body: JSON.stringify({ operationId: op.id, action: "pause", reason: "Operator paused operation", actor: selectedOperator })
+                              });
+                              const out = await res.json();
+                              if (out.success) {
+                                toast("Operation Paused", `${op.code} is now paused.`, "info");
+                                refreshTasks();
+                              } else {
+                                toast("Error", out.error, "error");
+                              }
+                            } catch (e: any) {
+                              toast("Error", e.message, "error");
+                            }
+                          }}
+                        >
+                          <Pause size={16}/> Pause
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="secondary"
+                          size="lg"
+                          onClick={async () => {
+                            try {
+                              const res = await fetch("/api/production/operation-transition", {
+                                method: "POST",
+                                body: JSON.stringify({ operationId: op.id, action: "start", reason: "Operator started operation", actor: selectedOperator })
+                              });
+                              const out = await res.json();
+                              if (out.success) {
+                                toast("Operation Started", `${op.code} is in progress.`, "success");
+                                refreshTasks();
+                              } else {
+                                toast("Error", out.error, "error");
+                              }
+                            } catch (e: any) {
+                              toast("Error", e.message, "error");
+                            }
+                          }}
+                        >
+                          <Play size={16}/> Start
+                        </Button>
+                      )}
+
+                      {machine && (
+                        <Button
+                          variant="quiet"
+                          size="lg"
+                          style={{ color: "var(--madder)", border: "2px solid var(--madder)", background: "#fff" }}
+                          onClick={async () => {
+                            try {
+                              const res = await fetch("/api/production/machine-status", {
+                                method: "POST",
+                                body: JSON.stringify({ machineId: machine.id, status: "BREAKDOWN", reason: "Operator reported breakdown from Floor View", actor: selectedOperator })
+                              });
+                              const outcome = await res.json();
+                              if (outcome.success) {
+                                toast("Breakdown Reported", `Alert sent for ${machine.code} breakdown.`, "error");
+                                refreshTasks();
+                              } else {
+                                toast("Error", outcome.error, "error");
+                              }
+                            } catch (err: any) {
+                              toast("Error", err.message, "error");
+                            }
+                          }}
+                        >
+                          <ShieldAlert size={16}/> Report Breakdown
+                        </Button>
+                      )}
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* COMPLETED TASKS TAB */}
+      {activeTab === "completed" && !loadingTasks && (
+        <>
+          {completedOps.length === 0 ? (
+            <div className="page-grid">
+              <div className="col-12">
+                <EmptyState
+                  title="No tasks marked completed today yet"
+                  detail={`When ${selectedOperator} finishes an assigned task and clicks 'Mark Complete', it will show here in the completed shift log.`}
+                  action={
+                    <Button variant="secondary" onClick={() => setActiveTab("active")}>
+                      View Active Tasks
+                    </Button>
+                  }
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="page-grid">
+              {completedOps.map((op) => (
+                <Card
+                  className="col-6"
+                  key={op.id}
+                  title={op.code}
+                  action={<StatusBadge status="COMPLETED"/>}
+                >
+                  <div className="stage-card__meta" style={{ marginBottom: 10 }}>
+                    <span><strong>Order:</strong> {op.orderCode}</span>
+                    <span><strong>Stage:</strong> {op.stage}</span>
+                  </div>
+                  <div style={{
+                    padding: "12px",
+                    background: "#ecfdf5",
+                    border: "2px solid #a7f3d0",
+                    borderRadius: "8px",
+                    marginBottom: 12
+                  }}>
+                    <div style={{ fontSize: "1.5rem", fontWeight: 900, color: "#065f46" }}>
+                      {formatQty(op.good, op.unit, 1)} Good Output
+                    </div>
+                    <div style={{ fontSize: "0.85rem", color: "#047857", marginTop: 4 }}>
+                      Target of {formatQty(op.target, op.unit, 0)} completed 100% on machine {op.machineCode || "N/A"}.
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 12, fontSize: "0.85rem", color: "#64748b" }}>
+                    <span>Waste: {formatQty(op.waste || 0, op.unit, 1)}</span>
+                    <span>Reject: {formatQty(op.reject || 0, op.unit, 1)}</span>
+                    <span>Status: <strong style={{ color: "#059669" }}>VERIFIED COMPLETED</strong></span>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* UNASSIGNED TASKS TAB */}
+      {activeTab === "unassigned" && !loadingTasks && (
+        <>
+          {unassignedOps.length === 0 ? (
+            <div className="page-grid">
+              <div className="col-12">
+                <EmptyState
+                  title="All tasks are currently assigned"
+                  detail="There are no unassigned planned operations waiting on the shop floor right now."
+                  action={<Button variant="secondary" onClick={() => setActiveTab("active")}>Return to my tasks</Button>}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="page-grid">
+              {unassignedOps.map((op) => (
+                <Card
+                  className="col-6"
+                  key={op.id}
+                  title={op.code}
+                  action={<StatusBadge status={op.status}/>}
+                >
+                  <div className="stage-card__meta" style={{ marginBottom: 10 }}>
+                    <span><strong>Order:</strong> {op.orderCode}</span>
+                    <span><strong>Stage:</strong> {op.stage}</span>
+                  </div>
+                  <div style={{ margin: "10px 0" }}>
+                    <strong>Target:</strong> {formatQty(op.target, op.unit, 0)}
+                  </div>
+                  <Button
+                    variant="primary"
+                    size="lg"
+                    onClick={async () => {
+                      try {
+                        const defaultMachine = data.machines.find(m => m.stage === op.stage && m.status === "IDLE")?.code || 
+                          (op.stage === "SPINNING" ? "SPIN-01" : op.stage === "WEAVING" ? "WEAV-01" : "DYE-01");
+                        const res = await fetch("/api/production/assign-machine", {
+                          method: "POST",
+                          body: JSON.stringify({
+                            operationId: op.id,
+                            machineId: defaultMachine,
+                            shift: `Today | A · 06:00–14:00`,
+                            operator: selectedOperator,
+                            actor: selectedOperator
+                          })
+                        });
+                        const out = await res.json();
+                        if (out.success) {
+                          toast("Task Claimed!", `${op.code} assigned to ${selectedOperator} on ${defaultMachine}.`, "success");
+                          setActiveTab("active");
+                          refreshTasks();
+                        } else {
+                          toast("Error", out.error, "error");
+                        }
+                      } catch (err: any) {
+                        toast("Error", err.message, "error");
+                      }
+                    }}
+                  >
+                    <Check size={16}/> Claim Task for Today
+                  </Button>
+                </Card>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
+/**
+ * Modal to Fill Production Details
+ */
+function FillProductionModal({
+  operation,
+  onClose,
+  onSuccess
+}: {
+  operation: Operation;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const { toast, user } = useDemo();
+  const [good, setGood] = useState("");
+  const [waste, setWaste] = useState("0");
+  const [reject, setReject] = useState("0");
+  const [rollQty, setRollQty] = useState("");
+  const [notes, setNotes] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const finalStage = operation.stage === "DYEING";
+  const isWeaving = operation.stage === "WEAVING";
+
+  async function handleRecord(e: FormEvent) {
+    e.preventDefault();
+    if (!good || parseFloat(good) <= 0) {
+      toast("Invalid quantity", "Please enter a valid good production quantity.", "error");
+      return;
     }
-  } catch(err: any) {
-    toast("Error", err.message, "error");
+
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/production/record-output", {
+        method: "POST",
+        body: JSON.stringify({
+          operationId: operation.id,
+          good: parseFloat(good),
+          waste: parseFloat(waste || "0"),
+          reject: parseFloat(reject || "0"),
+          rollQty: rollQty ? parseFloat(rollQty) : undefined,
+          actor: user?.name || "Operator"
+        })
+      });
+      const outcome = await res.json();
+      if (outcome.success) {
+        toast("Production Logged!", `Recorded +${good} ${operation.unit} good output for ${operation.code}.`, "success");
+        onSuccess();
+      } else {
+        toast("Error", outcome.error, "error");
+      }
+    } catch (err: any) {
+      toast("Error", err.message, "error");
+    } finally {
+      setSubmitting(false);
+    }
   }
-}} style={{ color: "var(--madder)", border: "2px solid var(--madder)", background: "#fff" }}><ShieldAlert size={17} /> Report Breakdown</Button>}</div></Card>; })}{ops.length === 0 && <div className="col-12"><EmptyState title="No operation is assigned to this user" detail="The demo list is intentionally not filled with every live operation. A planner or administrator must assign a real shift task before work appears here." action={<LinkButton href="/production" variant="secondary">Open production board</LinkButton>}/></div>}</div></>;
+
+  return (
+    <div style={{
+      position: "fixed",
+      inset: 0,
+      background: "rgba(0,0,0,0.6)",
+      zIndex: 1000,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      backdropFilter: "blur(2px)"
+    }}>
+      <div style={{
+        background: "white",
+        padding: 24,
+        borderRadius: 12,
+        width: "90%",
+        maxWidth: 580,
+        maxHeight: "90%",
+        overflow: "auto",
+        position: "relative",
+        border: "3px solid #000",
+        boxShadow: "6px 6px 0px #000"
+      }}>
+        <button
+          onClick={onClose}
+          style={{ position: "absolute", top: 16, right: 16, border: "none", background: "none", cursor: "pointer", color: "#64748b" }}
+          aria-label="Close modal"
+        >
+          <X size={24} />
+        </button>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+          <div style={{
+            background: "#2563eb",
+            color: "#fff",
+            padding: "6px 12px",
+            borderRadius: "6px",
+            fontWeight: 800,
+            fontSize: "0.85rem"
+          }}>
+            {operation.stage}
+          </div>
+          <h2 style={{ fontSize: "1.4rem", fontWeight: 800, margin: 0 }}>
+            Fill Production Details: {operation.code}
+          </h2>
+        </div>
+
+        <p style={{ color: "#64748b", fontSize: "0.9rem", marginBottom: 16 }}>
+          Order: <strong>{operation.orderCode}</strong> · Machine: <strong>{operation.machineCode || "N/A"}</strong> · Target: <strong>{formatQty(operation.target, operation.unit, 0)}</strong>
+        </p>
+
+        <form onSubmit={handleRecord} className="stack">
+          <Field label={`Good Output (${operation.unit}) *`} hint="Quantity accepted into stock / next stage">
+            <TextInput
+              type="number"
+              step="0.01"
+              required
+              placeholder="e.g. 250.00"
+              value={good}
+              onChange={(e) => setGood(e.target.value)}
+              autoFocus
+            />
+          </Field>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Field label={`Waste (${operation.unit})`} hint="Process trimmings & fibers">
+              <TextInput
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={waste}
+                onChange={(e) => setWaste(e.target.value)}
+              />
+            </Field>
+
+            <Field label={`Reject (${operation.unit})`} hint="Defective or off-spec">
+              <TextInput
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={reject}
+                onChange={(e) => setReject(e.target.value)}
+              />
+            </Field>
+          </div>
+
+          {isWeaving && (
+            <Field label="Fabric Roll Quantity (M)" hint="Optionally generate a fabric roll ID for quality inspection">
+              <TextInput
+                type="number"
+                step="0.01"
+                placeholder={good || "Roll length meters"}
+                value={rollQty}
+                onChange={(e) => setRollQty(e.target.value)}
+              />
+            </Field>
+          )}
+
+          <Field label="Shift Remarks / Operator Notes" hint="Optional speed, tension, or downtime notes">
+            <TextArea
+              rows={2}
+              placeholder="e.g. Machine ran smoothly at 850 RPM, no thread breakage."
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+            />
+          </Field>
+
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 16 }}>
+            <Button type="button" variant="secondary" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={submitting}
+              style={{ background: "#2563eb", color: "#fff", borderColor: "#000" }}
+            >
+              {submitting ? "Saving to Database…" : "Save Production Log"}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Modal to Mark Operation as Completed
+ */
+function MarkCompleteModal({
+  operation,
+  onClose,
+  onSuccess
+}: {
+  operation: Operation;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const { toast, user } = useDemo();
+  const [finalOutput, setFinalOutput] = useState("");
+  const [completing, setCompleting] = useState(false);
+
+  const remaining = Math.max(0, new Decimal(operation.target || 0).minus(operation.good || 0).toNumber());
+
+  async function handleComplete() {
+    setCompleting(true);
+    try {
+      // If operator entered final extra output, record it first
+      if (finalOutput && parseFloat(finalOutput) > 0) {
+        await fetch("/api/production/record-output", {
+          method: "POST",
+          body: JSON.stringify({
+            operationId: operation.id,
+            good: parseFloat(finalOutput),
+            waste: 0,
+            reject: 0,
+            actor: user?.name || "Operator"
+          })
+        });
+      }
+
+      // Mark operation complete
+      const res = await fetch("/api/production/operation-transition", {
+        method: "POST",
+        body: JSON.stringify({
+          operationId: operation.id,
+          action: "complete",
+          reason: "Marked complete by operator from Day's Tasks",
+          actor: user?.name || "Operator"
+        })
+      });
+      const outcome = await res.json();
+      if (outcome.success) {
+        toast("Task Completed!", `${operation.code} is marked complete and machine released to IDLE.`, "success");
+        onSuccess();
+      } else {
+        toast("Error", outcome.error, "error");
+      }
+    } catch (err: any) {
+      toast("Error", err.message, "error");
+    } finally {
+      setCompleting(false);
+    }
+  }
+
+  return (
+    <div style={{
+      position: "fixed",
+      inset: 0,
+      background: "rgba(0,0,0,0.6)",
+      zIndex: 1000,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      backdropFilter: "blur(2px)"
+    }}>
+      <div style={{
+        background: "white",
+        padding: 24,
+        borderRadius: 12,
+        width: "90%",
+        maxWidth: 520,
+        position: "relative",
+        border: "3px solid #000",
+        boxShadow: "6px 6px 0px #000"
+      }}>
+        <button
+          onClick={onClose}
+          style={{ position: "absolute", top: 16, right: 16, border: "none", background: "none", cursor: "pointer", color: "#64748b" }}
+          aria-label="Close modal"
+        >
+          <X size={24} />
+        </button>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+          <div style={{
+            background: "#10b981",
+            color: "#fff",
+            padding: "8px",
+            borderRadius: "50%",
+            display: "flex"
+          }}>
+            <CheckCircle2 size={24}/>
+          </div>
+          <div>
+            <h2 style={{ fontSize: "1.3rem", fontWeight: 800, margin: 0 }}>
+              Mark Task Complete
+            </h2>
+            <span style={{ color: "#64748b", fontSize: "0.85rem" }}>
+              {operation.code} · {operation.stage}
+            </span>
+          </div>
+        </div>
+
+        <div style={{
+          padding: "12px",
+          background: "#f0fdf4",
+          border: "2px solid #bbf7d0",
+          borderRadius: "8px",
+          margin: "16px 0"
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+            <span>Target:</span>
+            <strong>{formatQty(operation.target, operation.unit, 0)}</strong>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+            <span>Produced So Far:</span>
+            <strong>{formatQty(operation.good, operation.unit, 1)}</strong>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", color: remaining > 0 ? "#b45309" : "#059669" }}>
+            <span>Remaining Target:</span>
+            <strong>{remaining.toFixed(1)} {operation.unit}</strong>
+          </div>
+        </div>
+
+        {remaining > 0 && (
+          <Field label={`Add Closing Output (${operation.unit}) before marking complete?`} hint="Leave blank if target was adjusted or finalized as-is">
+            <TextInput
+              type="number"
+              step="0.01"
+              placeholder={`e.g. ${remaining.toFixed(1)} to reach 100%`}
+              value={finalOutput}
+              onChange={(e) => setFinalOutput(e.target.value)}
+            />
+          </Field>
+        )}
+
+        <p style={{ fontSize: "0.85rem", color: "#64748b", marginTop: 12 }}>
+          Completing this task will transition <strong>{operation.code}</strong> to <strong>COMPLETED</strong>, release machine <strong>{operation.machineCode || "N/A"}</strong> to <strong>IDLE</strong>, and log completion in production history.
+        </p>
+
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 18 }}>
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="primary"
+            disabled={completing}
+            onClick={handleComplete}
+            style={{ background: "#10b981", color: "#fff", borderColor: "#000" }}
+          >
+            {completing ? "Completing…" : "Yes, Mark Complete"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function PlanPage({ id }: { id: string }) {
@@ -346,7 +1151,7 @@ function OperationConsole({ id }: { id: string }) {
     <PageHeader eyebrow="Floor operation console" title={operation.code} description={`${operation.orderCode} · ${operation.stage.toLowerCase()} · ${operation.machineCode ?? "Machine not assigned"}`} actions={<LinkButton href="/production" variant="secondary"><ArrowLeft size={14}/> Production board</LinkButton>} meta={<><StatusBadge status={state}/><Tag>{operation.shift ?? "NO SHIFT"}</Tag><Tag>FLOOR VIEW · NO COSTS</Tag></>} />
     <div className="stat-grid"><StatCard label="Good output" value={formatQty(operation.good, operation.unit, 0)} detail="accepted at this operation" tone="neem"/><StatCard label="Waste" value={formatQty(operation.waste, operation.unit, 1)} detail="recorded separately" tone="turmeric"/><StatCard label="Reject" value={formatQty(operation.reject, operation.unit, 1)} detail="recorded separately" tone="madder"/><StatCard label="Remaining target" value={formatQty(Decimal.max(0, plannedRoom).toFixed(3), operation.unit, 0)} detail={`Target ${formatQty(operation.target, operation.unit, 0)}`} tone="indigo"/></div>
     <div className="two-pane"><div className="stack">
-      <Card title="1 · Confirm workstation"><div className="page-grid"><div className="col-6"><Kicker>Machine</Kicker><strong style={{ display: "block", font: "900 24px var(--font-mono)", marginTop: 6 }}>{machine?.code ?? "Unassigned"}</strong><span className="cell-secondary">{machine?.name ?? "Assign a stage-eligible machine before starting"}</span></div><div className="col-6"><Kicker>Machine state</Kicker><div style={{ marginTop: 8 }}><StatusBadge status={machine?.status ?? "OFFLINE"}/></div><span className="cell-secondary">{machine?.location ?? "No location"}</span></div><div className="col-6"><Kicker>Shift</Kicker><strong className="cell-primary">{operation.shift ?? "No assigned shift"}</strong></div><div className="col-6"><Kicker>Operator(s)</Kicker><strong className="cell-primary">{operation.operators.join(" · ") || "No assigned operator"}</strong></div></div>{machine?.status === "BREAKDOWN" && <InfoStrip tone="danger">Machine is down. Do not start this operation until a separate maintenance close-out clears the machine.</InfoStrip>}</Card>
+      <Card title="1 · Confirm workstation"><div className="page-grid"><div className="col-6"><Kicker>Machine</Kicker><strong style={{ display: "block", font: "900 24px var(--font-mono)", marginTop: 6 }}>{machine?.code ?? "Unassigned"}</strong><span className="cell-secondary">{machine?.name ?? "Assign a stage-eligible machine before starting"}</span></div><div className="col-6"><Kicker>Machine state</Kicker><div style={{ marginTop: 8 }}><StatusBadge status={machine?.status ?? "OFFLINE"}/></div><span className="cell-secondary">{machine?.location ?? "No location"}</span></div><div className="col-6"><Kicker>Shift</Kicker><strong className="cell-primary">{operation.shift ?? "No assigned shift"}</strong></div><div className="col-6"><Kicker>Operator(s)</Kicker><strong className="cell-primary">{(Array.isArray(operation.operators) ? operation.operators : []).join(" · ") || "No assigned operator"}</strong></div></div>{machine?.status === "BREAKDOWN" && <InfoStrip tone="danger">Machine is down. Do not start this operation until a separate maintenance close-out clears the machine.</InfoStrip>}</Card>
       <Card title="2 · Record output" className="card--floor"><form onSubmit={record} className="stack"><div className="form-grid form-grid--3"><Field label={`Good · ${operation.unit}`}><TextInput className="floor-input" inputMode="decimal" pattern="\d+(\.\d{1,3})?" value={good} onChange={(event) => setGood(event.target.value)} disabled={state !== "IN_PROGRESS" || !canRecordOutput} required/></Field><Field label={`Waste · ${operation.unit}`}><TextInput className="floor-input" inputMode="decimal" value={waste} onChange={(event) => setWaste(event.target.value)} disabled={state !== "IN_PROGRESS" || !canRecordOutput} required/></Field><Field label={`Reject · ${operation.unit}`}><TextInput className="floor-input" inputMode="decimal" value={reject} onChange={(event) => setReject(event.target.value)} disabled={state !== "IN_PROGRESS" || !canRecordOutput} required/></Field></div><div className="info-strip"><Activity size={17}/><div><strong>Exact shift check</strong><div>Combined entry {formatQty(nextQty.toFixed(3), operation.unit, 1)} · remaining target {formatQty(Decimal.max(0, plannedRoom).toFixed(3), operation.unit, 1)}</div></div></div>{finalStage && <Field label="Final-stage roll total · M" hint="Must exactly equal this entry's good-output quantity before final-stage completion."><TextInput className="floor-input" inputMode="decimal" value={rollQty} onChange={(event) => setRollQty(event.target.value)} disabled={state !== "IN_PROGRESS" || !canRecordOutput} required/><span className="field__hint">{rollMatches ? "Roll quantity reconciles." : "Roll total must equal good output exactly."}</span></Field>}<div className="form-actions"><span className="field__hint">Good, waste, reject and roll lineage create append-only events.</span><Button type="submit" size="lg" disabled={busy || state !== "IN_PROGRESS" || !rollMatches}><Check size={17}/>{busy ? "Recording…" : "Record output"}</Button></div></form></Card>
       <Card title="3 · State actions"><div className="stack-sm">{!canOperate && <InfoStrip tone="warning">State changes require machines.operate. This profile can inspect but cannot start, pause, complete, or cancel this operation.</InfoStrip>}<div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{state === "PLANNED" && <Button size="lg" disabled={!canOperate || busy || !machine || machine.status !== "IDLE"} onClick={() => transition("start")}><Play size={17}/> Start</Button>}{state === "IN_PROGRESS" && <><Button size="lg" variant="secondary" disabled={!canOperate || busy} onClick={() => transition("pause")}><Pause size={17}/> Pause</Button><Button size="lg" variant="primary" disabled={!canOperate || busy || (finalStage && !rollMatches)} onClick={() => transition("complete")}><Check size={17}/> Complete</Button></>}{state === "PAUSED" && <Button size="lg" disabled={!canOperate || busy} onClick={() => transition("resume")}><Play size={17}/> Resume</Button>}{["PLANNED", "IN_PROGRESS", "PAUSED"].includes(state) && <Button size="lg" variant="danger" disabled={!canOperate || busy} onClick={() => transition("cancel")}>Cancel operation</Button>}</div>{canOperate && ["IN_PROGRESS", "PAUSED", "PLANNED"].includes(state) && <Field label="Reason for pause / cancellation / downtime" hint="Required for pause and cancellation; preserve append-only reason. Use at least five characters."><TextArea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="What happened? Include the stop time and issue…"/></Field>}<span className="field__hint">Completed operations have no edit or delete controls. A correction is a new, linked event.</span></div></Card>
     </div><aside className="stack sticky-summary"><Card title="Operation thread"><div className="stack-sm"><div className="permission-note"><strong>{operation.planCode}</strong><span className="cell-secondary">Plan linked to order {operation.orderCode}</span></div><div className="permission-note"><strong>Stage · {operation.stage}</strong><span className="cell-secondary">Input unit and output unit: {operation.unit}. Cross-unit arithmetic is prohibited.</span></div><div className="permission-note"><strong>Target · {formatQty(operation.target, operation.unit, 1)}</strong><span className="cell-secondary">Recorded outputs: good + waste + reject.</span></div><InfoStrip tone="warning">Final-stage rolls need one traceable identity each; their exact total must reconcile to good output. No UUID or roll code is minted in this demo.</InfoStrip><LinkButton href={`/machines/${machine?.id ?? ""}`} variant="secondary"><Factory size={15}/> Machine detail</LinkButton></div></Card>
@@ -453,6 +1258,93 @@ function OrderModal({ orderCode, onClose }: { orderCode: string; onClose: () => 
              </Card>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+export function AssignTaskModal({ operatorName, shift, unassignedOps, onClose }: { operatorName: string; shift: string; unassignedOps: Operation[]; onClose: () => void; }) {
+  const { data, user, toast } = useDemo();
+  const [selectedOpId, setSelectedOpId] = useState("");
+  const [selectedMachine, setSelectedMachine] = useState("");
+  const [assigning, setAssigning] = useState(false);
+  
+  const selectedOp = unassignedOps.find(o => o.id === selectedOpId);
+  const eligibleMachines = selectedOp ? data.machines.filter(m => m.stage === selectedOp.stage && m.status === "IDLE") : [];
+
+  const estimatedHours = selectedOp ? new Decimal(selectedOp.target).div(50).toNumber() : 0;
+  
+  const handleAssign = async () => {
+    setAssigning(true);
+    try {
+      const res = await fetch("/api/production/assign-machine", {
+        method: "POST",
+        body: JSON.stringify({
+           operationId: selectedOpId,
+           machineId: selectedMachine,
+           shift,
+           operator: operatorName,
+           actor: user?.name,
+           autoSplit: estimatedHours > 8
+        })
+      });
+      const outcome = await res.json();
+      if (outcome.success) {
+        toast("Assignment saved", "Task assigned to operator.", "success");
+        window.location.reload();
+      } else {
+        toast("Error", outcome.error, "error");
+      }
+    } catch (err: any) {
+      toast("Error", err.message, "error");
+    } finally {
+      setAssigning(false);
+    }
+  };
+
+  return (
+    <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", justifyContent: "center", alignItems: "center", backdropFilter: "blur(4px)" }}>
+      <div style={{ background: "var(--paper)", padding: 24, borderRadius: 0, width: "90%", maxWidth: 500, maxHeight: "90%", overflow: "auto", position: "relative", border: "2px solid var(--ink)", boxShadow: "4px 4px 0 var(--ink)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Assign Task to {operatorName}</h2>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "inherit" }}><X size={20}/></button>
+        </div>
+        
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <Field label="Order Task">
+            <SelectInput value={selectedOpId} onChange={e => { setSelectedOpId(e.target.value); setSelectedMachine(""); }} disabled={assigning}>
+               <option value="">Select task...</option>
+               {unassignedOps.filter(op => { const lower = operatorName.toLowerCase(); const hasSpin = lower.includes("spinning"); const hasWeave = lower.includes("weaving"); const hasDye = lower.includes("dyeing"); if (!hasSpin && !hasWeave && !hasDye) return true; return (hasSpin && op.stage === "SPINNING") || (hasWeave && op.stage === "WEAVING") || (hasDye && op.stage === "DYEING"); }).map(op => {
+                 const order = data.orders.find(o => o.code === op.orderCode);
+                 const est = new Decimal(op.target).div(50).toNumber().toFixed(1);
+                 return <option key={op.id} value={op.id}>{op.orderCode} · {op.stage} (Est: {est} hrs)</option>;
+               })}
+            </SelectInput>
+          </Field>
+          
+          {selectedOp && (
+            <>
+              <div style={{ padding: 12, background: "var(--indigo-soft)", borderRadius: 4, display: "flex", flexDirection: "column", gap: 4 }}>
+                <span style={{ fontWeight: 700 }}>⏱️ Estimated time: {estimatedHours.toFixed(1)} hours</span>
+                {estimatedHours > 8 && <span style={{ fontSize: 12 }}>Note: Exceeds 8 hrs. Will auto-split remaining qty to next shift.</span>}
+              </div>
+              
+              <Field label="Machine">
+                <SelectInput value={selectedMachine} onChange={e => setSelectedMachine(e.target.value)} disabled={assigning || !eligibleMachines.length}>
+                  <option value="">{eligibleMachines.length ? "Select machine..." : `No eligible IDLE ${selectedOp.stage} machines`}</option>
+                  {eligibleMachines.map(m => <option key={m.id} value={m.code}>{m.code} · {m.name}</option>)}
+                </SelectInput>
+              </Field>
+            </>
+          )}
+          
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
+            <Button variant="secondary" onClick={onClose} disabled={assigning}>Cancel</Button>
+            <Button variant="primary" disabled={assigning || !selectedOpId || !selectedMachine} onClick={handleAssign}>
+              {assigning ? "Assigning..." : "Assign Task"}
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   );

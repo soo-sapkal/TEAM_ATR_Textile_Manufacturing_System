@@ -43,6 +43,20 @@ export interface Order {
   remaining: string;
   atRisk: boolean;
   materialShortage: boolean;
+  materialReadiness?: {
+    canStart: boolean;
+    hasShortage: boolean;
+    deficitSummary: string;
+    details: Array<{
+      yarnCode: string;
+      yarnName: string;
+      unit: string;
+      requiredQty: number;
+      availableQty: number;
+      deficitQty: number;
+      isShort: boolean;
+    }>;
+  };
   hasQualityHold: boolean;
   currency: string;
   revenue: string;
@@ -274,14 +288,30 @@ export interface ApiEnvelope<T> {
 export interface ApiErrorEnvelope {
   error: { code: string; message: string; details?: Record<string, unknown>; request_id?: string };
 }
+export interface InvoiceLineItem {
+  id: string;
+  invoiceId: string;
+  description: string;
+  quantity: number;
+  unit: Unit;
+  unitRate: number;
+  total: number;
+}
+
 export interface Invoice {
   id: string;
+  code: string;
+  shipmentId?: string;
   orderId: string;
   buyerName: string;
+  subtotal: number;
+  taxCgst: number;
+  taxSgst: number;
   amountDue: number;
   dueDate: string;
   status: "PENDING" | "PARTIAL" | "PAID";
   createdAt: string;
+  lineItems?: InvoiceLineItem[];
 }
 
 export interface Payment {
