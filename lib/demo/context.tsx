@@ -173,7 +173,7 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     if (!selected) return;
     window.sessionStorage.setItem(STORAGE_KEY, selected.id);
     window.dispatchEvent(new Event(SESSION_CHANGE_EVENT));
-    toast(`Signed in as ${selected.name}`, "Session active · Connected to Supabase", "success");
+    toast(`Signed in as ${selected.name}`, "Logged in successfully", "success");
     refreshData();
   }, [toast, refreshData]);
 
