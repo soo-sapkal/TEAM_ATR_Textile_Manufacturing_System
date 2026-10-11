@@ -17,31 +17,58 @@ import { Can } from "@/components/ui/Can";
 export function SupervisorDispatchDashboard() {
   const { data, toast } = useDemo();
   const [timeframe, setTimeframe] = useState("Today");
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState("ALL"); // ALL, READY, PARTIAL, COMPLETED
 
-  const filteredShipments = data.shipments;
-  
-  const pending = filteredShipments.filter(s => s.status !== "DISPATCHED");
-  const completed = filteredShipments.filter(s => s.status === "DISPATCHED");
-  
-  const fulfillmentRate = filteredShipments.length ? (completed.length / filteredShipments.length * 100).toFixed(0) : "0";
-  const totalVolume = completed.reduce((sum, s) => sum.plus(s.qty), new Decimal(0));
-  const totalRolls = completed.reduce((sum, s) => sum + (s.rolls || 0), 0);
-  
-  const now = Date.now();
-  const delayedShipments = pending.filter(s => new Date(s.plannedAt).getTime() < now);
+  // Shipments
+  const filteredShipments = data.shipments.filter(s => s.status === "DISPATCHED" || s.status === "DRAFT");
+  const completedShipments = filteredShipments.filter(s => s.status === "DISPATCHED");
+  const recentDispatches = [...completedShipments].sort((a, b) => new Date(b.plannedAt).getTime() - new Date(a.plannedAt).getTime()).slice(0, 5);
 
-  const pendingOrders = data.orders.filter(o => o.displayStatus !== "COMPLETED" && o.status !== "CANCELLED");
+  // Orders Analysis
+  const activeOrders = data.orders.filter(o => o.status !== "CANCELLED");
+  const fullyDispatchedOrders = activeOrders.filter(o => o.displayStatus === "COMPLETED" || new Decimal(o.remaining || 0).lte(0));
+  const partiallyDispatchedOrders = activeOrders.filter(o => new Decimal(o.dispatched || 0).gt(0) && new Decimal(o.remaining || 0).gt(0));
+
+  // Determine readiness based on ACCEPTED rolls
+  const acceptedRolls = data.rolls.filter(r => r.status === "ACCEPTED");
+  
+  const ordersWithReadiness = activeOrders.filter(o => new Decimal(o.remaining || 0).gt(0)).map(o => {
+    const orderRolls = acceptedRolls.filter(r => r.orderCode === o.code);
+    const eligibleQty = orderRolls.reduce((sum, r) => sum.plus(r.qty), new Decimal(0));
+    const remaining = new Decimal(o.remaining || 0);
+    const isReady = eligibleQty.gte(remaining);
+    const isPartiallyReady = eligibleQty.gt(0) && eligibleQty.lt(remaining);
+    return { ...o, eligibleQty, isReady, isPartiallyReady, orderRolls };
+  });
+
+  const readyOrders = ordersWithReadiness.filter(o => o.isReady || o.isPartiallyReady);
+  const totalOrdersAwaitingDispatch = ordersWithReadiness.length;
+
+  const totalEligibleQuantityByUnit = acceptedRolls.reduce((acc, roll) => {
+    acc[roll.unit] = (acc[roll.unit] || new Decimal(0)).plus(roll.qty);
+    return acc;
+  }, {} as Record<string, Decimal>);
+
+  // Filtering for the table
+  const displayedOrders = ordersWithReadiness.filter(o => {
+    const matchesSearch = !search || `${o.code} ${o.buyer} ${o.product}`.toLowerCase().includes(search.toLowerCase());
+    const matchesFilter = filter === "ALL" 
+      || (filter === "READY" && o.isReady)
+      || (filter === "PARTIAL" && o.isPartiallyReady);
+    return matchesSearch && matchesFilter;
+  });
 
   return (
     <>
       <PageHeader 
         eyebrow="Logistics Oversight" 
         title="Dispatch Dashboard" 
-        description="Monitor daily shipments, volume, pending order fulfillment, and dispatch performance." 
+        description="Monitor outbound shipments and final-goods inventory readiness for fulfillment." 
         actions={
           <div style={{ display: "flex", gap: 10 }}>
             <LinkButton href="/dispatch/orders" variant="primary">
-              <Truck size={16}/> Active & Pending Orders
+              <Truck size={16}/> Start Dispatch
             </LinkButton>
             <Button variant="secondary" onClick={() => { toast("Manifest Generated", "Daily dispatch manifest ready for printing.", "success"); window.print(); }} style={{ border: "2px solid #000", boxShadow: "3px 3px 0 #000" }}>
               <Printer size={16}/> Daily Manifest
@@ -50,68 +77,107 @@ export function SupervisorDispatchDashboard() {
         } 
       />
 
-      <div className="filter-row" role="group" style={{ marginBottom: 24 }}>
-        {["Today", "Yesterday", "This Week", "This Month", "Custom Range"].map(t => (
-          <button key={t} className={`filter-chip ${timeframe === t ? "filter-chip--active" : ""}`} style={{ border: "2px solid #000", fontWeight: "bold" }} onClick={() => setTimeframe(t)}>{t}</button>
-        ))}
-      </div>
-
       <div className="stat-grid" style={{ marginBottom: 32 }}>
+        <div style={{ border: "3px solid #000", boxShadow: "4px 4px 0px #000", padding: "20px", background: "var(--turmeric)", display: "flex", flexDirection: "column", gap: "8px" }}>
+          <div style={{ fontSize: "0.9rem", fontWeight: 700, textTransform: "uppercase" }}>Awaiting Dispatch</div>
+          <div style={{ fontSize: "2rem", fontWeight: 900 }}>{totalOrdersAwaitingDispatch}</div>
+          <div style={{ fontSize: "0.85rem", color: "#444", fontWeight: 600 }}>Total orders pending fulfillment</div>
+        </div>
         <div style={{ border: "3px solid #000", boxShadow: "4px 4px 0px #000", padding: "20px", background: "var(--neem)", display: "flex", flexDirection: "column", gap: "8px" }}>
-          <div style={{ fontSize: "0.9rem", fontWeight: 700, textTransform: "uppercase" }}>Fulfillment Rate</div>
-          <div style={{ fontSize: "2rem", fontWeight: 900 }}>{fulfillmentRate}%</div>
-          <div style={{ fontSize: "0.85rem", color: "#444", fontWeight: 600 }}>{completed.length} completed / {pending.length} pending shipments</div>
+          <div style={{ fontSize: "0.9rem", fontWeight: 700, textTransform: "uppercase" }}>Ready / Partial Ready</div>
+          <div style={{ fontSize: "2rem", fontWeight: 900 }}>{readyOrders.length}</div>
+          <div style={{ fontSize: "0.85rem", color: "#444", fontWeight: 600 }}>Orders with eligible stock</div>
         </div>
         <div style={{ border: "3px solid #000", boxShadow: "4px 4px 0px #000", padding: "20px", background: "var(--cotton)", display: "flex", flexDirection: "column", gap: "8px" }}>
-          <div style={{ fontSize: "0.9rem", fontWeight: 700, textTransform: "uppercase" }}>Dispatched Volume</div>
-          <div style={{ fontSize: "2rem", fontWeight: 900 }}>{formatQty(totalVolume.toFixed(0), "M", 0)}</div>
-          <div style={{ fontSize: "0.85rem", color: "#444", fontWeight: 600 }}>{totalRolls} total rolls sent</div>
+          <div style={{ fontSize: "0.9rem", fontWeight: 700, textTransform: "uppercase" }}>Partially / Fully Dispatched</div>
+          <div style={{ fontSize: "2rem", fontWeight: 900 }}>{partiallyDispatchedOrders.length} / {fullyDispatchedOrders.length}</div>
+          <div style={{ fontSize: "0.85rem", color: "#444", fontWeight: 600 }}>Orders shipped</div>
         </div>
-        <div style={{ border: "3px solid #000", boxShadow: "4px 4px 0px #000", padding: "20px", background: "var(--turmeric)", display: "flex", flexDirection: "column", gap: "8px" }}>
-          <div style={{ fontSize: "0.9rem", fontWeight: 700, textTransform: "uppercase" }}>Pending Customer Orders</div>
-          <div style={{ fontSize: "2rem", fontWeight: 900 }}>{pendingOrders.length}</div>
-          <div style={{ fontSize: "0.85rem", fontWeight: 600 }}>Awaiting fulfillment / dispatch</div>
-        </div>
-        <div style={{ border: "3px solid #000", boxShadow: "4px 4px 0px #000", padding: "20px", background: delayedShipments.length > 0 ? "var(--madder)" : "var(--indigo)", display: "flex", flexDirection: "column", gap: "8px", color: delayedShipments.length > 0 ? "#fff" : "inherit" }}>
-          <div style={{ fontSize: "0.9rem", fontWeight: 700, textTransform: "uppercase" }}>Urgent / Delayed</div>
-          <div style={{ fontSize: "2rem", fontWeight: 900 }}>{delayedShipments.length}</div>
-          <div style={{ fontSize: "0.85rem", fontWeight: 600 }}>Missed scheduled slots</div>
+        <div style={{ border: "3px solid #000", boxShadow: "4px 4px 0px #000", padding: "20px", background: "var(--indigo)", display: "flex", flexDirection: "column", gap: "8px", color: "#fff" }}>
+          <div style={{ fontSize: "0.9rem", fontWeight: 700, textTransform: "uppercase" }}>Eligible Final Goods</div>
+          <div style={{ fontSize: "1.5rem", fontWeight: 900, lineHeight: 1.2 }}>
+            {Object.entries(totalEligibleQuantityByUnit).map(([unit, qty]) => (
+              <div key={unit}>{formatQty(qty.toFixed(0), unit, 0)}</div>
+            ))}
+            {Object.keys(totalEligibleQuantityByUnit).length === 0 && "0"}
+          </div>
+          <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "rgba(255,255,255,0.8)" }}>Awaiting shipment</div>
         </div>
       </div>
 
-      <section className="card" style={{ border: "3px solid #000", boxShadow: "4px 4px 0px #000", background: "#fff" }}>
-        <div className="card__head">
-          <h2>Shipments Overview</h2>
-          <div style={{ display: "flex", gap: 8 }}>
-            <Link href="/dispatch/orders" className="btn btn--primary btn--sm" style={{ border: "2px solid #000", boxShadow: "2px 2px 0px #000", fontWeight: "bold" }}>
-              Ship an Order →
-            </Link>
-            <Tag>{filteredShipments.length} records</Tag>
+      <div className="page-grid">
+        <section className="col-8 card" style={{ border: "3px solid #000", boxShadow: "4px 4px 0px #000", background: "#fff" }}>
+          <div className="card__head" style={{ borderBottom: "2px solid #000", paddingBottom: 16, marginBottom: 16 }}>
+            <div>
+              <h2 style={{ fontSize: 20, fontWeight: 900, margin: "0 0 8px 0" }}>Dispatch-Ready Orders</h2>
+              <div className="filter-row" role="group">
+                {["ALL", "READY", "PARTIAL"].map(t => (
+                  <button 
+                    key={t} 
+                    className={`filter-chip ${filter === t ? "filter-chip--active" : ""}`} 
+                    style={{ border: "2px solid #000", fontWeight: "bold" }} 
+                    onClick={() => setFilter(t)}
+                  >
+                    {t === "READY" ? "Fully Ready" : t === "PARTIAL" ? "Partially Ready" : "All Pending"}
+                  </button>
+                ))}
+                <div style={{ marginLeft: "auto", display: "flex", alignItems: "center" }}>
+                  <input 
+                    type="text" 
+                    placeholder="Search order or buyer..." 
+                    value={search} 
+                    onChange={e => setSearch(e.target.value)} 
+                    style={{ border: "2px solid #000", padding: "6px 12px", background: "#fff", fontWeight: 500 }}
+                  />
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-        <DataTable 
-          headers={["Shipment", "Order / Buyer", "Planned", "Volume", "Vehicle", "Invoice", "Status", "Actions"]} 
-          rows={filteredShipments.map(shipment => {
-            const isDelayed = shipment.status !== "DISPATCHED" && new Date(shipment.plannedAt).getTime() < now;
-            return [
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                {isDelayed && <ShieldAlert size={16} color="var(--madder)" />}
-                <Link href={`/dispatch/${shipment.id}`} className="code" style={{ fontWeight: 700, color: isDelayed ? "var(--madder)" : "inherit", textDecoration: "none" }}>{shipment.code}</Link>
-              </div>,
-              <div>
-                <Link href={`/orders/${encodeURIComponent(shipment.orderCode)}`} className="cell-primary">{shipment.orderCode}</Link>
-                <span className="cell-secondary">{shipment.buyer}</span>
-              </div>,
-              <span style={{ color: isDelayed ? "var(--madder)" : "inherit", fontWeight: isDelayed ? "bold" : "normal" }}>{formatDateTime(shipment.plannedAt)}</span>,
-              <span>{shipment.rolls} rolls <span className="cell-secondary">· {formatQty(shipment.qty, shipment.unit, 0)}</span></span>,
-              shipment.vehicle || "—",
-              shipment.invoice ? <Tag>{shipment.invoice}</Tag> : <span className="cell-secondary">—</span>,
-              isDelayed ? <StatusBadge status="QUARANTINED" label="DELAYED" /> : <StatusBadge status={shipment.status} />,
-              <Link href={`/dispatch/${shipment.id}`} className="btn btn--secondary btn--sm" style={{ border: isDelayed ? "2px solid var(--madder)" : "2px solid #000", boxShadow: "2px 2px 0px #000", fontWeight: "bold" }}>View <ArrowRight size={12}/></Link>
-            ];
-          })}
-        />
-      </section>
+          <DataTable 
+            headers={["Order", "Buyer", "Remaining", "Eligible Stock", "Status", ""]} 
+            rows={displayedOrders.map(order => {
+              const remaining = new Decimal(order.remaining || 0);
+              return [
+                <Link href={`/orders/${encodeURIComponent(order.code)}`} className="code" style={{ fontWeight: 700 }}>{order.code}</Link>,
+                order.buyer,
+                <span className="num">{formatQty(remaining.toFixed(2), order.unit, 0)}</span>,
+                <div style={{ display: "flex", flexDirection: "column" }}>
+                  <span className="num" style={{ fontWeight: 700, color: order.isReady ? "var(--neem)" : order.isPartiallyReady ? "var(--turmeric-dark, #b45309)" : "var(--madder)" }}>
+                    {formatQty(order.eligibleQty.toFixed(2), order.unit as any, 0)}
+                  </span>
+                  <span style={{ fontSize: 11, color: "#666" }}>{order.orderRolls.length} rolls</span>
+                </div>,
+                order.isReady ? <StatusBadge status="COMPLETED" label="FULLY READY" /> : order.isPartiallyReady ? <StatusBadge status="IN_PROGRESS" label="PARTIAL STOCK" /> : <StatusBadge status="AWAITING_INSPECTION" label="WAITING PRODUCTION" />,
+                <Link href={`/dispatch/orders`} className="btn btn--secondary btn--sm" style={{ border: "2px solid #000", boxShadow: "2px 2px 0px #000", fontWeight: "bold", whiteSpace: "nowrap" }}>Process <ArrowRight size={12}/></Link>
+              ];
+            })}
+            empty={<EmptyState title="No orders match your filters" />}
+          />
+        </section>
+
+        <section className="col-4 stack">
+          <Card title="Recent Dispatches">
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              {recentDispatches.map(shipment => (
+                <div key={shipment.id} style={{ borderBottom: "1px solid #ddd", paddingBottom: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                    <Link href={`/dispatch/${shipment.id}`} className="code" style={{ fontWeight: 700 }}>{shipment.code}</Link>
+                    <span style={{ fontSize: 12, color: "#666" }}>{formatDate(shipment.plannedAt)}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                    <span>{shipment.orderCode}</span>
+                    <span className="num" style={{ fontWeight: 700 }}>{formatQty(shipment.qty, shipment.unit, 0)}</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
+                    Vehicle: {shipment.vehicle || "N/A"}
+                  </div>
+                </div>
+              ))}
+              {recentDispatches.length === 0 && <span style={{ color: "#666" }}>No recent dispatches found.</span>}
+            </div>
+          </Card>
+        </section>
+      </div>
     </>
   );
 }
@@ -119,40 +185,104 @@ export function SupervisorDispatchDashboard() {
 export function DispatchActiveOrdersPage() {
   const { data, user, toast } = useDemo();
   const [shippingOrder, setShippingOrder] = useState<Order | null>(null);
+  
+  // Modal form states
   const [vehicle, setVehicle] = useState("");
   const [driverName, setDriverName] = useState("");
   const [licensePlate, setLicensePlate] = useState("");
   const [transportAgency, setTransportAgency] = useState("");
   const [ewayBillNumber, setEwayBillNumber] = useState("");
+  const [plannedAt, setPlannedAt] = useState(() => new Date().toISOString().slice(0, 16));
+  const [invoiceMode, setInvoiceMode] = useState(true);
+  const [selectedRollIds, setSelectedRollIds] = useState<Set<string>>(new Set());
+  const [scannedRollCode, setScannedRollCode] = useState("");
+
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("PENDING"); // ALL | PENDING | COMPLETED
+  const [filter, setFilter] = useState("ALL"); // ALL, READY, PARTIAL, COMPLETED, PRODUCTION
 
-  const filteredOrders = data.orders.filter(order => {
+  const activeOrders = data.orders.filter(o => o.status !== "CANCELLED");
+  const acceptedRolls = data.rolls.filter(r => r.status === "ACCEPTED");
+
+  // Augment orders with readiness
+  const ordersWithReadiness = activeOrders.map(o => {
+    const orderRolls = acceptedRolls.filter(r => r.orderCode === o.code);
+    const eligibleQty = orderRolls.reduce((sum, r) => sum.plus(r.qty), new Decimal(0));
+    const remaining = new Decimal(o.remaining || 0);
+    const isCompleted = o.displayStatus === "COMPLETED" || remaining.lte(0);
+    const isReady = !isCompleted && eligibleQty.gte(remaining);
+    const isPartiallyReady = !isCompleted && eligibleQty.gt(0) && eligibleQty.lt(remaining);
+    const inProduction = !isCompleted && !isReady && !isPartiallyReady;
+
+    return { ...o, eligibleQty, isReady, isPartiallyReady, isCompleted, inProduction, orderRolls };
+  });
+
+  const filteredOrders = ordersWithReadiness.filter(order => {
     const matchesSearch = !search || `${order.code} ${order.buyer} ${order.product}`.toLowerCase().includes(search.toLowerCase());
-    const isCompleted = order.displayStatus === "COMPLETED" || new Decimal(order.remaining || 0).eq(0);
     const matchesFilter = filter === "ALL" 
-      || (filter === "PENDING" && !isCompleted)
-      || (filter === "COMPLETED" && isCompleted);
+      || (filter === "READY" && order.isReady)
+      || (filter === "PARTIAL" && order.isPartiallyReady)
+      || (filter === "PRODUCTION" && order.inProduction)
+      || (filter === "COMPLETED" && order.isCompleted);
     return matchesSearch && matchesFilter;
   });
 
-  const openShipModal = (order: Order) => {
+  const openShipModal = (order: any) => {
     setShippingOrder(order);
-    setVehicle("KA-01-AB-1234");
-    setDriverName("Ramesh Patil");
-    setLicensePlate("KA-01-AB-1234");
-    setTransportAgency("VRL Logistics");
-    setEwayBillNumber(`EWB-2026-${Math.floor(100000 + Math.random() * 900000)}`);
+    setSelectedRollIds(new Set()); // Require manual selection
+    setVehicle("");
+    setDriverName("");
+    setLicensePlate("");
+    setTransportAgency("");
+    setEwayBillNumber("");
+    setScannedRollCode("");
+    setPlannedAt(new Date().toISOString().slice(0, 16));
   };
 
   const closeShipModal = () => {
     setShippingOrder(null);
   };
 
+  // Derive selection stats
+  const eligibleRollsForModal = shippingOrder ? acceptedRolls.filter(r => r.orderCode === shippingOrder.code) : [];
+  const selectedRolls = eligibleRollsForModal.filter(r => selectedRollIds.has(r.id));
+  const selectedQty = selectedRolls.reduce((sum, r) => sum.plus(r.qty), new Decimal(0));
+  const orderRemaining = shippingOrder ? new Decimal(shippingOrder.remaining || 0) : new Decimal(0);
+  const exceedsRemaining = selectedQty.gt(orderRemaining);
+  const validSelection = selectedRolls.length > 0 && !exceedsRemaining;
+
+  const handleScanRoll = () => {
+    const code = scannedRollCode.trim().toUpperCase();
+    if (!code) return;
+    const found = eligibleRollsForModal.find(r => r.code.toUpperCase() === code);
+    if (found) {
+      const next = new Set(selectedRollIds);
+      if (!next.has(found.id)) {
+        next.add(found.id);
+        setSelectedRollIds(next);
+        setScannedRollCode("");
+      } else {
+        toast("Already selected", `Roll ${found.code} is already added to load.`, "warning");
+      }
+    } else {
+      toast("Invalid Roll", `Roll ${code} is not eligible for this order. It must be ACCEPTED and belong to ${shippingOrder?.code}.`, "error");
+    }
+  };
+
+  const toggleRoll = (rollId: string) => {
+    const next = new Set(selectedRollIds);
+    if (next.has(rollId)) next.delete(rollId);
+    else next.add(rollId);
+    setSelectedRollIds(next);
+  };
+
   async function handleFulfillOrder(e: FormEvent) {
     e.preventDefault();
     if (!shippingOrder) return;
+    if (!validSelection) {
+      toast("Invalid Selection", "You must select at least one roll, and total quantity cannot exceed order remaining.", "error");
+      return;
+    }
     if (!vehicle.trim() && !licensePlate.trim()) {
       toast("Vehicle required", "Please enter vehicle / license plate details.", "error");
       return;
@@ -161,28 +291,22 @@ export function DispatchActiveOrdersPage() {
     setBusy(true);
 
     try {
-      // Find rolls for this order that can be shipped (ACCEPTED or rolls assigned to order)
-      let eligibleRolls = data.rolls.filter(r => r.orderCode === shippingOrder.code && (r.status === "ACCEPTED" || r.status === "RESERVED"));
-      if (eligibleRolls.length === 0) {
-        eligibleRolls = data.rolls.filter(r => r.orderCode === shippingOrder.code && r.status !== "DISPATCHED");
-      }
-      
-      const rollIds = eligibleRolls.map(r => r.id);
-      const invoiceCode = `INV-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+      const rollIds = Array.from(selectedRollIds);
+      const invoiceCode = invoiceMode ? `INV-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}` : undefined;
 
       const res = await fetch("/api/dispatch/fulfill", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           orderCode: shippingOrder.code,
-          rollIds: rollIds.length ? rollIds : [crypto.randomUUID()],
+          rollIds: rollIds,
           buyer: shippingOrder.buyer,
           vehicle: vehicle.trim() || licensePlate.trim(),
           driverName: driverName.trim(),
           licensePlate: licensePlate.trim() || vehicle.trim(),
           transportAgency: transportAgency.trim(),
           ewayBillNumber: ewayBillNumber.trim(),
-          plannedAt: new Date().toISOString(),
+          plannedAt: new Date(plannedAt).toISOString(),
           invoice: invoiceCode,
           actor: user?.name || "Dispatch Officer"
         })
@@ -190,11 +314,11 @@ export function DispatchActiveOrdersPage() {
 
       const resData = await res.json();
       if (resData.success) {
-        toast("Order Shipped & Invoiced!", `Order ${shippingOrder.code} has been marked as Completed. Generated Invoice: ${invoiceCode}`, "success");
+        toast("Dispatch Confirmed!", invoiceCode ? `Order ${shippingOrder.code} shipped. Invoice ${invoiceCode} generated.` : `Order ${shippingOrder.code} shipped successfully.`, "success");
         closeShipModal();
         window.location.reload();
       } else {
-        toast("Shipment failed", resData.error || "Failed to ship order", "error");
+        toast("Shipment failed", resData.error || "Failed to dispatch order", "error");
       }
     } catch (err: any) {
       toast("Error", err.message, "error");
@@ -207,8 +331,8 @@ export function DispatchActiveOrdersPage() {
     <>
       <PageHeader 
         eyebrow="Outbound Logistics" 
-        title="Active & Pending Orders" 
-        description="View all customer commitments. Click 'Ship Order' to assign vehicle details, dispatch, mark the order completed, and generate the invoice."
+        title="Fulfillment Queue" 
+        description="Select orders with eligible stock, assign specific rolls to the shipment, and dispatch to generate invoices."
         actions={
           <div style={{ display: "flex", gap: 10 }}>
             <LinkButton href="/dispatch/dashboard" variant="secondary">
@@ -222,14 +346,14 @@ export function DispatchActiveOrdersPage() {
       />
 
       <div className="filter-row" role="group" style={{ marginBottom: 20 }}>
-        {["PENDING", "COMPLETED", "ALL"].map(t => (
+        {["READY", "PARTIAL", "PRODUCTION", "COMPLETED", "ALL"].map(t => (
           <button 
             key={t} 
             className={`filter-chip ${filter === t ? "filter-chip--active" : ""}`} 
             style={{ border: "2px solid #000", fontWeight: "bold" }} 
             onClick={() => setFilter(t)}
           >
-            {t === "PENDING" ? "Active & Pending" : t === "COMPLETED" ? "Completed / Shipped" : "All Orders"}
+            {t === "READY" ? "Fully Ready" : t === "PARTIAL" ? "Partially Ready" : t === "PRODUCTION" ? "In Production" : t === "COMPLETED" ? "Shipped" : "All Orders"}
           </button>
         ))}
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center" }}>
@@ -243,11 +367,10 @@ export function DispatchActiveOrdersPage() {
         </div>
       </div>
 
-      <Card title="Orders Fulfillment Queue" action={<Tag>{filteredOrders.length} orders</Tag>}>
+      <Card title="Order Dispatch Queue" action={<Tag>{filteredOrders.length} orders</Tag>}>
         <DataTable 
-          headers={["Order", "Buyer", "Product / Colour", "Due Date", "Progress", "Balance", "Status", "Action"]}
+          headers={["Order", "Buyer", "Due Date", "Progress", "Balance", "Eligible", "Status", "Action"]}
           rows={filteredOrders.map(order => {
-            const isCompleted = order.displayStatus === "COMPLETED" || new Decimal(order.remaining || 0).eq(0);
             return [
               <div>
                 <Link href={`/orders/${encodeURIComponent(order.code)}`} className="cell-primary code" style={{ fontWeight: 700 }}>
@@ -256,22 +379,21 @@ export function DispatchActiveOrdersPage() {
                 <span className="cell-secondary">{order.priority} PRIORITY</span>
               </div>,
               <strong>{order.buyer}</strong>,
-              <div>
-                <span className="cell-primary">{order.product}</span>
-                <span className="cell-secondary">{order.colour}</span>
-              </div>,
               <span>{formatDate(order.due)}</span>,
               <div style={{ minWidth: 120 }}>
                 <Meter value={order.dispatched} total={order.ordered} label="Dispatched" showNumbers={false}/>
                 <span className="cell-secondary num" style={{ fontSize: 11 }}>
-                  {formatQty(order.dispatched, order.unit, 0)} / {formatQty(order.ordered, order.unit, 0)}
+                  {formatQty(order.dispatched, order.unit as any, 0)} / {formatQty(order.ordered, order.unit as any, 0)}
                 </span>
               </div>,
-              <span className="num" style={{ fontWeight: isCompleted ? "normal" : "bold", color: isCompleted ? "#888" : "inherit" }}>
-                {formatQty(order.remaining, order.unit, 0)} remaining
+              <span className="num" style={{ fontWeight: order.isCompleted ? "normal" : "bold", color: order.isCompleted ? "#888" : "inherit" }}>
+                {formatQty(order.remaining, order.unit as any, 0)} remaining
               </span>,
-              isCompleted ? <StatusBadge status="COMPLETED" label="COMPLETED"/> : <StatusBadge status={order.displayStatus}/>,
-              isCompleted ? (
+              <span className="num" style={{ color: order.isReady ? "var(--neem)" : order.isPartiallyReady ? "var(--turmeric-dark, #b45309)" : "inherit" }}>
+                {formatQty(order.eligibleQty.toFixed(2), order.unit as any, 0)} ready
+              </span>,
+              order.isCompleted ? <StatusBadge status="COMPLETED" label="COMPLETED"/> : order.isReady ? <StatusBadge status="COMPLETED" label="READY"/> : order.isPartiallyReady ? <StatusBadge status="IN_PROGRESS" label="PARTIAL STOCK"/> : <StatusBadge status="AWAITING_INSPECTION" label="IN PRODUCTION"/>,
+              order.isCompleted ? (
                 <span style={{ display: "flex", alignItems: "center", gap: 4, color: "var(--neem)", fontWeight: 700, fontSize: 12 }}>
                   <CheckCircle2 size={16}/> Shipped
                 </span>
@@ -280,127 +402,133 @@ export function DispatchActiveOrdersPage() {
                   variant="primary" 
                   size="sm" 
                   onClick={() => openShipModal(order)}
+                  disabled={order.eligibleQty.lte(0)}
                   style={{ border: "2px solid #000", boxShadow: "2px 2px 0 #000", fontWeight: 800 }}
                 >
-                  <Truck size={14}/> Ship Order
+                  <Truck size={14}/> {order.isReady ? "Ship Order" : "Ship Partial"}
                 </Button>
               )
             ];
           })}
-          empty={<EmptyState title="No orders found" detail="No active orders match your search."/>}
+          empty={<EmptyState title="No orders found" detail="No orders match your filter criteria."/>}
         />
       </Card>
 
       {/* Ship Order Modal */}
       {shippingOrder && (
         <div style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
           backgroundColor: "rgba(0,0,0,0.65)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 1000,
-          padding: 20
+          display: "flex", alignItems: "center", justifyContent: "center",
+          zIndex: 1000, padding: 20
         }}>
           <div style={{
-            background: "#fff",
-            border: "4px solid #000",
-            boxShadow: "8px 8px 0px #000",
-            maxWidth: 580,
-            width: "100%",
-            maxHeight: "90vh",
-            overflowY: "auto",
-            padding: 28,
-            display: "flex",
-            flexDirection: "column",
-            gap: 20
+            background: "#fff", border: "4px solid #000", boxShadow: "8px 8px 0px #000",
+            maxWidth: 1000, width: "100%", maxHeight: "90vh", overflowY: "auto",
+            display: "flex", flexDirection: "column"
           }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "2px solid #000", paddingBottom: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "2px solid #000", padding: "16px 24px", background: "var(--paper)" }}>
               <div>
-                <span className="kicker" style={{ color: "var(--indigo)" }}>Dispatch Fulfillment</span>
-                <h2 style={{ margin: "4px 0 0", font: "900 24px var(--font-display)" }}>Ship Order: {shippingOrder.code}</h2>
-                <p style={{ margin: 0, color: "#666", fontSize: 13 }}>{shippingOrder.buyer} · {shippingOrder.product}</p>
+                <span className="kicker" style={{ color: "var(--indigo)" }}>Fulfillment Selection</span>
+                <h2 style={{ margin: "4px 0 0", font: "900 24px var(--font-display)" }}>Dispatch: {shippingOrder.code}</h2>
               </div>
-              <button onClick={closeShipModal} style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }}>
-                <X size={22}/>
-              </button>
+              <button onClick={closeShipModal} style={{ background: "none", border: "none", cursor: "pointer" }}><X size={24}/></button>
             </div>
 
-            <div style={{ background: "var(--cotton)", border: "2px solid #000", padding: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <div>
-                <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: "#666" }}>Order Total</span>
-                <div style={{ fontWeight: 800, fontSize: 16 }}>{formatQty(shippingOrder.ordered, shippingOrder.unit, 0)}</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 340px" }}>
+              <div style={{ padding: 24, borderRight: "2px solid #000" }}>
+                <h3 style={{ margin: "0 0 16px 0", fontSize: 16 }}>Select Rolls to Dispatch</h3>
+                
+                <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+                  <TextInput 
+                    placeholder="Scan or type roll code..." 
+                    value={scannedRollCode}
+                    onChange={(e) => setScannedRollCode(e.target.value)}
+                    onKeyDown={(e) => { if(e.key === "Enter") { e.preventDefault(); handleScanRoll(); } }}
+                    style={{ flex: 1 }}
+                  />
+                  <Button variant="secondary" onClick={handleScanRoll} type="button">Add Roll</Button>
+                </div>
+
+                <DataTable
+                  headers={["Pick", "Roll Code", "Lot/Shade", "Quantity", "Location"]}
+                  rows={eligibleRollsForModal.map(r => [
+                    <input 
+                      type="checkbox" 
+                      checked={selectedRollIds.has(r.id)} 
+                      onChange={() => toggleRoll(r.id)} 
+                      style={{ width: 18, height: 18, cursor: "pointer" }}
+                    />,
+                    <span className="code">{r.code}</span>,
+                    `${r.dyeLot || ''} ${r.colour || ''}`,
+                    <span className="num">{formatQty(r.qty, r.unit, 2)}</span>,
+                    r.location
+                  ])}
+                  empty={<EmptyState title="No eligible rolls" detail="No ACCEPTED rolls in final-goods for this order." />}
+                />
               </div>
-              <div>
-                <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: "#666" }}>Remaining to Ship</span>
-                <div style={{ fontWeight: 800, fontSize: 16, color: "var(--indigo)" }}>{formatQty(shippingOrder.remaining, shippingOrder.unit, 0)}</div>
-              </div>
-              <div>
-                <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: "#666" }}>Action Upon Submit</span>
-                <div style={{ fontWeight: 800, fontSize: 14, color: "var(--neem)" }}>Mark Order as Completed</div>
-              </div>
-              <div>
-                <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: "#666" }}>Finance Integration</span>
-                <div style={{ fontWeight: 800, fontSize: 14, color: "var(--turmeric-dark, #b45309)" }}>Auto-Generate Invoice</div>
+
+              <div style={{ padding: 24, background: "var(--cotton)" }}>
+                <h3 style={{ margin: "0 0 16px 0", fontSize: 16 }}>Dispatch Confirmation</h3>
+                
+                <div style={{ background: "#fff", border: "2px solid #000", padding: 12, marginBottom: 20 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 12, color: "#666", fontWeight: 700, textTransform: "uppercase" }}>
+                    <span>Selected</span>
+                    <span>Remaining Limit</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                    <span style={{ fontSize: 24, fontWeight: 900, color: exceedsRemaining ? "var(--madder)" : "var(--indigo)" }}>
+                      {formatQty(selectedQty.toFixed(2), shippingOrder.unit as any, 0)}
+                    </span>
+                    <span style={{ fontSize: 16, fontWeight: 700, color: "#444" }}>
+                      / {formatQty(orderRemaining.toFixed(2), shippingOrder.unit as any, 0)}
+                    </span>
+                  </div>
+                  {exceedsRemaining && (
+                    <div style={{ marginTop: 8, color: "var(--madder)", fontWeight: 700, fontSize: 12 }}>
+                      <ShieldAlert size={14} style={{ verticalAlign: "middle", marginRight: 4 }}/> Exceeds order remainder
+                    </div>
+                  )}
+                  {!exceedsRemaining && selectedQty.gt(0) && selectedQty.lt(orderRemaining) && (
+                    <div style={{ marginTop: 8, color: "var(--turmeric-dark, #b45309)", fontWeight: 700, fontSize: 12 }}>
+                      Partial Dispatch ({(orderRemaining.minus(selectedQty)).toFixed(2)} left)
+                    </div>
+                  )}
+                  {!exceedsRemaining && selectedQty.eq(orderRemaining) && selectedQty.gt(0) && (
+                    <div style={{ marginTop: 8, color: "var(--neem)", fontWeight: 700, fontSize: 12 }}>
+                      <CheckCircle2 size={14} style={{ verticalAlign: "middle", marginRight: 4 }}/> Full Dispatch
+                    </div>
+                  )}
+                </div>
+
+                <form onSubmit={handleFulfillOrder} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  <Field label="Vehicle Registration / ID *">
+                    <TextInput value={vehicle} onChange={e => { setVehicle(e.target.value); setLicensePlate(e.target.value); }} placeholder="MH-12-AB-1234" required />
+                  </Field>
+                  <Field label="Transport Agency">
+                    <TextInput value={transportAgency} onChange={e => setTransportAgency(e.target.value)} placeholder="VRL Logistics" />
+                  </Field>
+                  <Field label="Driver Name">
+                    <TextInput value={driverName} onChange={e => setDriverName(e.target.value)} placeholder="Name (Optional)" />
+                  </Field>
+                  <Field label="E-Way Bill Number">
+                    <TextInput value={ewayBillNumber} onChange={e => setEwayBillNumber(e.target.value)} placeholder="EWB-..." />
+                  </Field>
+                  <Field label="Dispatch Date & Time *">
+                    <TextInput type="datetime-local" value={plannedAt} onChange={e => setPlannedAt(e.target.value)} required />
+                  </Field>
+
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", marginTop: 8 }}>
+                    <input type="checkbox" checked={invoiceMode} onChange={e => setInvoiceMode(e.target.checked)} style={{ width: 16, height: 16 }} />
+                    Auto-generate Accounts Receivable Invoice
+                  </label>
+
+                  <Button type="submit" variant="primary" size="lg" disabled={busy || !validSelection} style={{ border: "2px solid #000", boxShadow: "3px 3px 0 #000", fontWeight: 900, marginTop: 12 }}>
+                    <Truck size={18}/> {busy ? "Processing…" : "Confirm Dispatch"}
+                  </Button>
+                </form>
               </div>
             </div>
-
-            <form onSubmit={handleFulfillOrder} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-                <Field label="Vehicle / Truck Identifier">
-                  <TextInput 
-                    value={vehicle} 
-                    onChange={e => { setVehicle(e.target.value); setLicensePlate(e.target.value); }} 
-                    placeholder="e.g. MH-04-JK-8821" 
-                    required
-                  />
-                </Field>
-                <Field label="Driver Name">
-                  <TextInput 
-                    value={driverName} 
-                    onChange={e => setDriverName(e.target.value)} 
-                    placeholder="e.g. Ramesh Patil" 
-                    required
-                  />
-                </Field>
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-                <Field label="Transport Agency">
-                  <TextInput 
-                    value={transportAgency} 
-                    onChange={e => setTransportAgency(e.target.value)} 
-                    placeholder="e.g. VRL Logistics" 
-                    required
-                  />
-                </Field>
-                <Field label="e-Way Bill Number">
-                  <TextInput 
-                    value={ewayBillNumber} 
-                    onChange={e => setEwayBillNumber(e.target.value)} 
-                    placeholder="e.g. EWB-2026-99212" 
-                    required
-                  />
-                </Field>
-              </div>
-
-              <InfoStrip tone="info">
-                Submitting will update the database, mark this order as <strong>COMPLETED</strong>, create the dispatch shipment record, and generate an active accounts receivable invoice with Net-30 payment terms.
-              </InfoStrip>
-
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 8 }}>
-                <Button type="button" variant="secondary" onClick={closeShipModal}>
-                  Cancel
-                </Button>
-                <Button type="submit" variant="primary" size="lg" disabled={busy} style={{ border: "2px solid #000", boxShadow: "3px 3px 0 #000", fontWeight: 900 }}>
-                  <Truck size={18}/> {busy ? "Shipping & Invoicing…" : "Ship & Complete Order"}
-                </Button>
-              </div>
-            </form>
           </div>
         </div>
       )}

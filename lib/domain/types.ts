@@ -162,6 +162,7 @@ export interface Operation {
   status: "PLANNED" | "IN_PROGRESS" | "PAUSED" | "COMPLETED" | "CANCELLED";
   machineCode: string | null;
   shift: string | null;
+  scheduledDate?: string | null;
   good: string;
   waste: string;
   reject: string;

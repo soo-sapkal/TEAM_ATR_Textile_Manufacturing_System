@@ -75,10 +75,11 @@ function ProductionBoard() {
     <div className="page-grid">
       {shifts.map((shift, shiftIndex) => {
         const expectedShiftString = `${currentDate} | ${shift}`;
-        // Support legacy assignment format where date isn't explicitly prepended if it's today
+        // Support both discrete scheduledDate and legacy assignment format
         const assignedOps = data.operations.filter(op => 
+          (op.scheduledDate === currentDate && op.shift === shift) ||
           op.shift === expectedShiftString || 
-          (op.shift === shift && currentDate === new Date().toISOString().split('T')[0])
+          (op.shift === shift && !op.scheduledDate && currentDate === new Date().toISOString().split('T')[0])
         );
         
         const machineOperators = DEMO_USERS.filter(u => u.roles.includes("MACHINE_OPERATOR")).filter((op, idx) => {
@@ -90,7 +91,7 @@ function ProductionBoard() {
           // 2. Are they assigned to ANY OTHER shift on this same date?
           const isBusyToday = data.operations.some(o => 
             Array.isArray(o.operators) && o.operators.includes(operatorName) && 
-            (o.shift?.startsWith(currentDate) || (o.shift && currentDate === new Date().toISOString().split('T')[0] && !o.shift.includes("|")))
+            (o.scheduledDate === currentDate || o.shift?.startsWith(currentDate) || (o.shift && !o.scheduledDate && currentDate === new Date().toISOString().split('T')[0] && !o.shift.includes("|")))
           );
           if (isBusyToday) return false;
           
@@ -227,7 +228,7 @@ function OperationCard({ operation, onOrderClick }: { operation: Operation; onOr
       {isLarge && <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13 }}><input type="checkbox" checked={autoSplit} onChange={e => setAutoSplit(e.target.checked)} /> <span>Auto-split remaining {Math.max(0, estimatedHours - 8).toFixed(1)} hrs to next shift</span></label>}
     </div>
     
-    <Field label="Date"><TextInput type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} disabled={assigning} /></Field><Field label="Shift"><SelectInput value={selectedShift} onChange={(event) => setSelectedShift(event.target.value)} disabled={assigning}><option value="">Select shift</option><option value="A · 06:00–14:00">A · 06:00–14:00</option><option value="B · 14:00–22:00">B · 14:00–22:00</option><option value="C · 22:00–06:00">C · 22:00–06:00</option></SelectInput></Field><Field label="Machine"><SelectInput value={selectedCode} onChange={(event) => setSelectedMachine(event.target.value)} disabled={!eligibleMachines.length || assigning}><option value="">No eligible machine</option>{eligibleMachines.map((machine) => <option key={machine.id} value={machine.code}>{machine.code} · {machine.name}</option>)}</SelectInput></Field><Field label="Operator"><SelectInput value={selectedOperator} onChange={(event) => setSelectedOperator(event.target.value)} disabled={assigning}><option value="">Select operator</option>{DEMO_USERS.filter(u => u.roles.includes("MACHINE_OPERATOR")).map(u => <option key={u.id} value={u.name.split(" (")[0]}>{u.name}</option>)}</SelectInput></Field><Button size="sm" disabled={!selectedCode || !selectedShift || !selectedDate || !selectedOperator || assigning || alreadyAssigned} onClick={async () => { setAssigning(true); try { const res = await fetch("/api/production/assign-machine", { method: "POST", body: JSON.stringify({ operationId: operation.id, machineId: selectedCode, shift: fullShiftString, operator: selectedOperator, actor: user?.name, autoSplit }) }); const outcome = await res.json(); if (outcome.success) { toast("Assignment saved", isLarge && autoSplit ? "Assigned and remaining quantity auto-split to next shift." : "Operation assigned for the day.", "success"); setCommandRevision((current) => current + 1); window.location.reload(); } else { toast("Error", outcome.error, "error"); } } catch (err: any) { toast("Error", err.message, "error"); } finally { setAssigning(false); } }}>{assigning ? "Assigning…" : alreadyAssigned ? "Saved" : "Save Assignment"}</Button>{!eligibleMachines.length && <span className="field__hint">No unreserved IDLE {operation.stage.toLowerCase()} machine is currently available.</span>}</div>}{!canAssign && ["PLANNED", "PAUSED"].includes(operation.status) && <span className="field__hint">Machine assignment requires production.assign.</span>}
+    <Field label="Date"><TextInput type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} disabled={assigning} /></Field><Field label="Shift"><SelectInput value={selectedShift} onChange={(event) => setSelectedShift(event.target.value)} disabled={assigning}><option value="">Select shift</option><option value="A · 06:00–14:00">A · 06:00–14:00</option><option value="B · 14:00–22:00">B · 14:00–22:00</option><option value="C · 22:00–06:00">C · 22:00–06:00</option></SelectInput></Field><Field label="Machine"><SelectInput value={selectedCode} onChange={(event) => setSelectedMachine(event.target.value)} disabled={!eligibleMachines.length || assigning}><option value="">No eligible machine</option>{eligibleMachines.map((machine) => <option key={machine.id} value={machine.code}>{machine.code} · {machine.name}</option>)}</SelectInput></Field><Field label="Operator"><SelectInput value={selectedOperator} onChange={(event) => setSelectedOperator(event.target.value)} disabled={assigning}><option value="">Select operator</option>{DEMO_USERS.filter(u => u.roles.includes("MACHINE_OPERATOR")).map(u => <option key={u.id} value={u.name.split(" (")[0]}>{u.name}</option>)}</SelectInput></Field><Button size="sm" disabled={!selectedCode || !selectedShift || !selectedDate || !selectedOperator || assigning || alreadyAssigned} onClick={async () => { setAssigning(true); try { const res = await fetch("/api/production/assign-machine", { method: "POST", body: JSON.stringify({ operationId: operation.id, machineId: selectedCode, shift: selectedShift, date: selectedDate, operator: selectedOperator, actor: user?.name, autoSplit }) }); const outcome = await res.json(); if (outcome.success) { toast("Assignment saved", isLarge && autoSplit ? "Assigned and remaining quantity auto-split to next shift." : "Operation assigned for the day.", "success"); setCommandRevision((current) => current + 1); window.location.reload(); } else { toast("Error", outcome.error, "error"); } } catch (err: any) { toast("Error", err.message, "error"); } finally { setAssigning(false); } }}>{assigning ? "Assigning…" : alreadyAssigned ? "Saved" : "Save Assignment"}</Button>{!eligibleMachines.length && <span className="field__hint">No unreserved IDLE {operation.stage.toLowerCase()} machine is currently available.</span>}</div>}{!canAssign && ["PLANNED", "PAUSED"].includes(operation.status) && <span className="field__hint">Machine assignment requires production.assign.</span>}
   {order?.materialShortage && operation.stage !== "SPINNING" && <div className="field__hint" style={{ color: "var(--madder)", fontWeight: "bold", marginTop: 8 }}>⚠️ Warning: Upstream material shortage. Assigning this task may stall production.</div>}
   </article>;
 }
@@ -667,7 +668,8 @@ function MyWorkPage() {
                           body: JSON.stringify({
                             operationId: op.id,
                             machineId: defaultMachine,
-                            shift: `Today | A · 06:00–14:00`,
+                            shift: `A · 06:00–14:00`,
+                            date: new Date().toISOString().split('T')[0],
                             operator: selectedOperator,
                             actor: selectedOperator
                           })
@@ -1282,7 +1284,8 @@ export function AssignTaskModal({ operatorName, shift, unassignedOps, onClose }:
         body: JSON.stringify({
            operationId: selectedOpId,
            machineId: selectedMachine,
-           shift,
+           shift: shift.split(" | ")[1] || shift,
+           date: shift.split(" | ")[0] || new Date().toISOString().split('T')[0],
            operator: operatorName,
            actor: user?.name,
            autoSplit: estimatedHours > 8

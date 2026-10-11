@@ -75,7 +75,12 @@ function cloneSeed(): DemoData {
     invoices: [],
     payments: [],
     supplierBills: [],
-    supplierPayments: []
+    supplierPayments: [],
+    roles: [],
+    employees: [],
+    attendanceLogs: [],
+    payrollRuns: [],
+    payslips: [],
   };
 }
 
