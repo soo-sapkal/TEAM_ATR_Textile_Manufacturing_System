@@ -2,7 +2,7 @@
 
 /* eslint-disable react/jsx-key -- These JSX values are typed DataTable row descriptors; DataTable creates keyed table rows/cells, while direct rendered lists keep explicit entity keys. */
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { RoleLink as Link } from "@/components/ui/primitives";
 import { Activity, ArrowLeft, ArrowRight, Clock3, ShieldAlert, Wrench } from "lucide-react";
 import { useDemo } from "@/lib/demo/context";
@@ -20,31 +20,68 @@ export function MachineRoute({ path, id }: { path: string; id?: string }) {
 }
 
 function MachineBoard() {
-  const { data, user } = useDemo();
+  const { data, user, refreshData } = useDemo();
   const [stage, setStage] = useState<(typeof MACHINE_STAGES)[number]>("ALL");
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (data.machines.length === 0) {
+      setLoading(true);
+      fetch("/api/production")
+        .then((r) => r.json())
+        .then((res) => {
+          if (res.success && res.data?.machines?.length) {
+            refreshData();
+          }
+        })
+        .catch(console.error)
+        .finally(() => setLoading(false));
+    }
+  }, [data.machines.length, refreshData]);
+
   const filtered = useMemo(() => data.machines.filter((machine) => stage === "ALL" || machine.stage === stage), [data.machines, stage]);
   return <>
-    <PageHeader eyebrow="Production assets · status board" title="Machines" description="Each machine has an explicit state, stage, operation assignment, shift output, and downtime. Only authorized finance readers see rates." actions={<LinkButton href="/production" variant="secondary"><Activity size={15}/> Production board</LinkButton>} meta={<Tag>{data.machines.length} ASSETS · DEMO</Tag>} />
+    <PageHeader eyebrow="Production assets · status board" title="Machines" description="Each machine has an explicit state, stage, operation assignment, shift output, and downtime. Only authorized finance readers see rates." actions={<LinkButton href="/production" variant="secondary"><Activity size={15}/> Production board</LinkButton>} meta={<Tag>{data.machines.length} ASSETS · LIVE</Tag>} />
     <div className="stat-grid">{MACHINE_STATUSES.map((status, index) => <div className={`stat-card stat-card--${["indigo", "neem", "turmeric", "madder", "madder", "cotton"][index]}`} key={status}><div className="stat-card__top">{status.replaceAll("_", " ")}</div><strong>{data.machines.filter((machine) => machine.status === status).length}</strong><div className="stat-card__bottom">{status === "BREAKDOWN" ? "reason and recovery required" : "machines"}</div></div>)}</div>
     <div className="filter-row" role="group" aria-label="Filter machine stage">{MACHINE_STAGES.map((item) => <button type="button" key={item} className={`filter-chip${stage === item ? " filter-chip--active" : ""}`} aria-pressed={stage === item} onClick={() => setStage(item)}>{item}</button>)}</div>
-    <div className="page-grid">{filtered.map((machine) => <article className={`machine-tile machine-tile--${machine.status} col-4`} key={machine.id}>
-      <div className="machine-tile__top"><div><span className="machine-tile__code">{machine.code}</span><h3>{machine.name}</h3></div><StatusBadge status={machine.status}/></div>
-      <div className="machine-tile__meta"><span>{machine.stage}</span><span>{machine.location}</span></div>
-      <div style={{ marginTop: 13 }}>
-        <span className="cell-secondary">Current operation / order</span>
-        {machine.orderCode ? (() => {
-          const order = data.orders.find(o => o.code === machine.orderCode);
-          return (
-            <div style={{ display: "flex", flexDirection: "column" }}>
-              <strong className="cell-primary">{machine.orderCode}</strong>
-              <span className="cell-secondary" style={{ fontSize: 12 }}>{order ? `${order.product} · ${order.colour}` : "Product unknown"}</span>
-            </div>
-          );
-        })() : <strong className="cell-primary">Unassigned</strong>}
+    
+    {loading && data.machines.length === 0 ? (
+      <div style={{ padding: "48px 24px", textAlign: "center", border: "2px dashed var(--color-border, #ccc)", borderRadius: 8, margin: "24px 0", background: "var(--card-bg, #fff)" }}>
+        <div style={{ fontWeight: 700, fontSize: 16 }}>Loading factory machines…</div>
+        <p className="cell-secondary" style={{ marginTop: 6 }}>Syncing machine assets with factory ledger.</p>
       </div>
-      <div className="page-grid" style={{ marginTop: 10, gap: 8 }}><div className="col-6"><span className="cell-secondary">Good today</span><strong className="num">{formatQty(machine.todayGood, machine.unit, 0)}</strong></div><div className="col-6"><span className="cell-secondary">Downtime</span><strong className="num">{machine.downtimeMinutes} min</strong></div></div>
-      <div style={{ marginTop: 13, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}><span className="field__hint">{hasPermission(user, "finance.read") ? (machine.costPerHour ? `${formatMoney(machine.costPerHour)}/hr` : "Hourly rate missing") : "Rate · finance only"}</span><Link href={`/machines/${machine.id}`} className="btn btn--secondary btn--sm">Open machine <ArrowRight size={12}/></Link></div>
-    </article>)}</div>
+    ) : filtered.length === 0 ? (
+      <div style={{ margin: "24px 0" }}>
+        <EmptyState
+          title={data.machines.length === 0 ? "No machines loaded" : `No machines found for stage "${stage}"`}
+          detail={data.machines.length === 0 ? "No machine assets are currently loaded from the database." : "Try selecting a different stage filter above."}
+          action={
+            <Button variant="secondary" onClick={() => refreshData()}>
+              Refresh machine status
+            </Button>
+          }
+        />
+      </div>
+    ) : (
+      <div className="page-grid">{filtered.map((machine) => <article className={`machine-tile machine-tile--${machine.status} col-4`} key={machine.id}>
+        <div className="machine-tile__top"><div><span className="machine-tile__code">{machine.code}</span><h3>{machine.name}</h3></div><StatusBadge status={machine.status}/></div>
+        <div className="machine-tile__meta"><span>{machine.stage}</span><span>{machine.location}</span></div>
+        <div style={{ marginTop: 13 }}>
+          <span className="cell-secondary">Current operation / order</span>
+          {machine.orderCode ? (() => {
+            const order = data.orders.find(o => o.code === machine.orderCode);
+            return (
+              <div style={{ display: "flex", flexDirection: "column" }}>
+                <strong className="cell-primary">{machine.orderCode}</strong>
+                <span className="cell-secondary" style={{ fontSize: 12 }}>{order ? `${order.product} · ${order.colour}` : "Product unknown"}</span>
+              </div>
+            );
+          })() : <strong className="cell-primary">Unassigned</strong>}
+        </div>
+        <div className="page-grid" style={{ marginTop: 10, gap: 8 }}><div className="col-6"><span className="cell-secondary">Good today</span><strong className="num">{formatQty(machine.todayGood, machine.unit, 0)}</strong></div><div className="col-6"><span className="cell-secondary">Downtime</span><strong className="num">{machine.downtimeMinutes} min</strong></div></div>
+        <div style={{ marginTop: 13, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}><span className="field__hint">{hasPermission(user, "finance.read") ? (machine.costPerHour ? `${formatMoney(machine.costPerHour)}/hr` : "Hourly rate missing") : "Rate · finance only"}</span><Link href={`/machines/${machine.id}`} className="btn btn--secondary btn--sm">Open machine <ArrowRight size={12}/></Link></div>
+      </article>)}</div>
+    )}
     <InfoStrip tone="info" title="Assignment guardrails.">A machine runs only through its assigned, stage-matched operation. Setup, breakdown, maintenance, or offline state blocks a new start; a second open downtime/maintenance event is prohibited.</InfoStrip>
   </>;
 }

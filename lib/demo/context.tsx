@@ -16,6 +16,7 @@ type DemoContextValue = {
   toasts: ToastMessage[];
   loginAs: (id: string) => void;
   logout: () => void;
+  refreshData: () => void;
   act: (kind: string, payload?: Record<string, unknown>) => Promise<DemoActionResult>;
   toast: (title: string, detail?: string, tone?: ToastMessage["tone"]) => void;
   dismissToast: (id: string) => void;
@@ -95,51 +96,61 @@ export function DemoProvider({ children }: { children: ReactNode }) {
   const ready = clientReady && isAuthLoaded && isDataLoaded;
 
   const refreshData = useCallback(() => {
+    const safeFetch = async (url: string) => {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) return null;
+        return await res.json();
+      } catch {
+        return null;
+      }
+    };
+
     Promise.all([
-      fetch("/api/orders").then(r => r.json()),
-      fetch("/api/inventory").then(r => r.json()),
-      fetch("/api/dispatch").then(r => r.json()),
-      fetch("/api/production").then(r => r.json()),
-      fetch("/api/quality").then(r => r.json()),
-      fetch("/api/finance/receivables").then(r => r.json()),
-      fetch("/api/finance/payables").then(r => r.json())
+      safeFetch("/api/orders"),
+      safeFetch("/api/inventory"),
+      safeFetch("/api/dispatch"),
+      safeFetch("/api/production"),
+      safeFetch("/api/quality"),
+      safeFetch("/api/finance/receivables"),
+      safeFetch("/api/finance/payables")
     ]).then(([ordersRes, inventoryRes, dispatchRes, productionRes, qualityRes, receivablesRes, payablesRes]) => {
       setData((prev) => {
         const next = { ...prev };
         
-        if (ordersRes.success && ordersRes.data) next.orders = ordersRes.data;
+        if (ordersRes?.success && ordersRes.data) next.orders = ordersRes.data;
         
-        if (inventoryRes.success && inventoryRes.data) {
+        if (inventoryRes?.success && inventoryRes.data) {
           if (inventoryRes.data.yarnItems) next.yarnItems = inventoryRes.data.yarnItems;
           if (inventoryRes.data.yarnBatches) next.yarnBatches = inventoryRes.data.yarnBatches;
           if (inventoryRes.data.yarnMovements) next.yarnMovements = inventoryRes.data.yarnMovements;
         }
 
-        if (dispatchRes.success && dispatchRes.data) {
+        if (dispatchRes?.success && dispatchRes.data) {
           if (dispatchRes.data.shipments) next.shipments = dispatchRes.data.shipments;
           if (dispatchRes.data.dispatchEvents) next.dispatchEvents = dispatchRes.data.dispatchEvents;
           if (dispatchRes.data.rolls) next.rolls = dispatchRes.data.rolls;
         }
 
-        if (productionRes.success && productionRes.data) {
+        if (productionRes?.success && productionRes.data) {
           if (productionRes.data.machines) next.machines = productionRes.data.machines;
           if (productionRes.data.operations) next.operations = productionRes.data.operations;
           if (productionRes.data.outputEvents) next.outputEvents = productionRes.data.outputEvents;
           if (productionRes.data.machineEvents) next.machineEvents = productionRes.data.machineEvents;
         }
 
-        if (qualityRes.success && qualityRes.data) {
+        if (qualityRes?.success && qualityRes.data) {
           if (qualityRes.data.inspectionEvents) next.inspectionEvents = qualityRes.data.inspectionEvents;
           if (qualityRes.data.reworkEvents) next.reworkEvents = qualityRes.data.reworkEvents;
           if (qualityRes.data.rolls) next.rolls = qualityRes.data.rolls;
         }
 
-        if (receivablesRes.data) {
+        if (receivablesRes?.data) {
           if (receivablesRes.data.invoices) next.invoices = receivablesRes.data.invoices;
           if (receivablesRes.data.payments) next.payments = receivablesRes.data.payments;
         }
 
-        if (payablesRes.data) {
+        if (payablesRes?.data) {
           if (payablesRes.data.supplierBills) next.supplierBills = payablesRes.data.supplierBills;
           if (payablesRes.data.supplierPayments) next.supplierPayments = payablesRes.data.supplierPayments;
         }
@@ -173,11 +184,18 @@ export function DemoProvider({ children }: { children: ReactNode }) {
     window.setTimeout(() => setToasts((current) => current.filter((item) => item.id !== id)), 5200);
   }, []);
 
-  const loginAs = useCallback((id: string) => {
+  const loginAs = useCallback(async (id: string) => {
     const selected = DEMO_USERS.find((candidate) => candidate.id === id);
     if (!selected) return;
     window.sessionStorage.setItem(STORAGE_KEY, selected.id);
     window.dispatchEvent(new Event(SESSION_CHANGE_EVENT));
+    try {
+      await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: selected.email, password: "password123" })
+      });
+    } catch {}
     toast(`Signed in as ${selected.name}`, "Session active · Connected to Supabase", "success");
     refreshData();
   }, [toast, refreshData]);
@@ -200,7 +218,7 @@ export function DemoProvider({ children }: { children: ReactNode }) {
   }, [toast, user]);
 
   const dismissToast = useCallback((id: string) => setToasts((current) => current.filter((item) => item.id !== id)), []);
-  const value = useMemo(() => ({ user, data, ready, toasts, loginAs, logout, act, toast, dismissToast }), [user, data, ready, toasts, loginAs, logout, act, toast, dismissToast]);
+  const value = useMemo(() => ({ user, data, ready, toasts, loginAs, logout, refreshData, act, toast, dismissToast }), [user, data, ready, toasts, loginAs, logout, refreshData, act, toast, dismissToast]);
   return <DemoContext.Provider value={value}>{children}</DemoContext.Provider>;
 }
 

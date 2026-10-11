@@ -1,12 +1,8 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { Pool } from "pg";
+import { pool } from "@/lib/db/pool";
 import { verifyToken } from "@/lib/auth/auth";
 import { snakeToCamel } from "@/lib/supabase/adapter";
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || "postgresql://postgres.xaqbisnaetgsjiortzgi:sohamsapkal@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres",
-});
 
 export async function GET() {
   try {
